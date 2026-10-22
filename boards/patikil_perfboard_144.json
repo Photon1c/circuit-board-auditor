@@ -1,0 +1,11 @@
+{
+  "name": "PATIKIL 1.2in perfboard",
+  "type": "perfboard",
+  "rows": 12,
+  "columns": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"],
+  "origin": "A1 at bottom-left, row 1 at bottom (confirmed)",
+  "column_direction": "left_to_right",
+  "row_direction": "bottom_to_top",
+  "strips": [],
+  "rails": []
+}

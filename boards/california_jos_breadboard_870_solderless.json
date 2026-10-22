@@ -1,0 +1,27 @@
+{
+  "name": "California JOS 830-point breadboard",
+  "type": "breadboard",
+  "rows": 63,
+  "columns": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
+  "origin": "A1 at bottom-left, row 1 at bottom",
+  "column_direction": "left_to_right",
+  "row_direction": "bottom_to_top",
+  "strips": [["A", "B", "C", "D", "E"], ["F", "G", "H", "I", "J"]],
+  "center_gap": "E|F",
+  "rails": [
+    {"id": "K", "name": "- left", "holes": 63, "skip": [5]},
+    {"id": "L", "name": "+ left", "holes": 63, "skip": [5]},
+    {"id": "M", "name": "- right", "holes": 63, "skip": [5]},
+    {"id": "N", "name": "+ right", "holes": 63, "skip": [5]}
+  ],
+  "breadvolt": {"covered_rows": 10, "pin_rows": 4},
+  "specs": {
+    "size_mm": [164, 54, 8.5],
+    "total_points": 878,
+    "ic_points": 630,
+    "rail_points": 248,
+    "pitch_mm": 2.54,
+    "voltage_max_v": 36,
+    "current_max_a": 2
+  }
+}

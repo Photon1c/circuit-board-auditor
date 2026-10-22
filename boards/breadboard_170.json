@@ -1,0 +1,13 @@
+{
+  "name": "170-hole breadboard",
+  "type": "breadboard",
+  "rows": 17,
+  "columns": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
+  "origin": "A17 at bottom-left, row 1 at top",
+  "column_direction": "left_to_right",
+  "row_direction": "top_to_bottom",
+  "row_numbering": "top_to_bottom",
+  "strips": [["A", "B", "C", "D", "E"], ["F", "G", "H", "I", "J"]],
+  "center_gap": "E|F",
+  "rails": []
+}

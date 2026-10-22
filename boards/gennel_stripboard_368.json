@@ -1,0 +1,12 @@
+{
+  "name": "GENNEL 50x70 stripboard",
+  "type": "stripboard",
+  "rows": 16,
+  "columns": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W"],
+  "origin": "A1 at top-right",
+  "column_direction": "right_to_left",
+  "row_direction": "top_to_bottom",
+  "strip_orientation": "vertical",
+  "breaks": [],
+  "rails": []
+}
