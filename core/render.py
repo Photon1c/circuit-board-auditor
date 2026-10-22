@@ -53,7 +53,7 @@ def render_svg(board: Board, netlist: Netlist | None = None, *, breadvolt: bool 
 
     out = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width:g} {height:g}" '
-        f'width="100%" style="max-width:{width:g}px">'
+        f'width="{width:g}" height="{height:g}">'
     ]
 
     # Column letters and rail ids above the top of the board.

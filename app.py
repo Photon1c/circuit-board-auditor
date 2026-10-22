@@ -73,7 +73,9 @@ def netlist_from_json(text: str) -> None:
     state.breadvolt_shift = int(data.get("breadvolt_shift", 0))
 
 
-ui.add_head_html("""
+@ui.page("/")
+def index() -> None:
+    ui.add_head_html("""
 <style>
   .nicegui-content {
     max-width: none !important;
@@ -96,12 +98,16 @@ ui.add_head_html("""
     min-height: 0;
     overflow: auto;
   }
+  .auditor-board {
+    flex: 1 1 auto;
+    min-width: 16rem;
+  }
   .auditor-board svg {
     display: block;
-    width: auto !important;
-    height: auto !important;
     max-width: 100%;
     max-height: calc(100vh - 4.5rem);
+    width: auto;
+    height: auto;
   }
   .auditor-lines .q-item {
     min-height: 28px;
@@ -110,10 +116,6 @@ ui.add_head_html("""
   }
 </style>
 """)
-
-
-@ui.page("/")
-def index() -> None:
     with ui.row().classes("items-baseline gap-3 q-mb-xs"):
         ui.label("Circuit board auditor").classes("text-h5")
         ui.label("Press H for help").classes("text-caption text-grey")

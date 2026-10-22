@@ -12,7 +12,17 @@ def breadboard() -> Board:
 
 
 def test_svg_draws_every_hole():
-    assert render_svg(breadboard()).count("<circle") == 170
+    svg = render_svg(breadboard())
+    assert svg.count("<circle") == 170
+    assert 'width="100%"' not in svg
+    assert 'width="' in svg and 'height="' in svg
+
+
+def test_perfboard_svg_draws_every_hole():
+    board = Board.load(ROOT / "boards" / "patikil_perfboard_144.json")
+    svg = render_svg(board)
+    assert svg.count("<circle") == 144
+    assert "<svg" in svg and 'height="' in svg
 
 
 def test_component_label_is_escaped():
