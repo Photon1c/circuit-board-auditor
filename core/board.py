@@ -68,6 +68,7 @@ class Board:
     breaks: tuple[tuple[str, int, int], ...] = ()  # stripboard: (column, row_a, row_b) cuts
     column_direction: str = "left_to_right"        # or "right_to_left"
     row_direction: str = "top_to_bottom"           # or "bottom_to_top"
+    right_row_numbers: str = "same"                # or "inverted" on the far side of a split board
     rails: tuple[Rail, ...] = ()
     breadvolt: BreadVolt | None = None
 
@@ -92,6 +93,7 @@ class Board:
             breaks=breaks,
             column_direction=data.get("column_direction", "left_to_right"),
             row_direction=data.get("row_direction", "top_to_bottom"),
+            right_row_numbers=data.get("right_row_numbers", "same"),
             rails=_parse_rails(list(data.get("rails", []))),
             breadvolt=_parse_breadvolt(data.get("breadvolt")),
         )
@@ -107,6 +109,8 @@ class Board:
             raise ValueError(f"Bad column_direction: {self.column_direction!r}")
         if self.row_direction not in {"top_to_bottom", "bottom_to_top"}:
             raise ValueError(f"Bad row_direction: {self.row_direction!r}")
+        if self.right_row_numbers not in {"same", "inverted"}:
+            raise ValueError(f"Bad right_row_numbers: {self.right_row_numbers!r}")
         cols = set(self.columns)
         if self.kind == "breadboard":
             seen: set[str] = set()

@@ -77,37 +77,98 @@ def netlist_from_json(text: str) -> None:
 def index() -> None:
     ui.add_head_html("""
 <style>
+  html, body, .q-layout, .q-page-container, .q-page {
+    height: 100%;
+    margin: 0;
+    background: #e6e1d6 !important;
+    color: #1f1b16;
+    color-scheme: light;
+    overflow: hidden;
+  }
+  .q-page {
+    padding: 0 !important;
+  }
   .nicegui-content {
+    background: #e6e1d6 !important;
     max-width: none !important;
     width: 100%;
     height: 100vh;
     max-height: 100vh;
+    min-height: 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     box-sizing: border-box;
-    padding: 8px 12px 10px;
+    padding: 6px 8px;
+    gap: 4px;
   }
-  .auditor-shell {
-    flex: 1 1 auto;
-    min-height: 0;
+  .auditor-title {
+    flex: 0 0 auto;
     width: 100%;
+    gap: 8px;
+    margin: 0;
   }
-  .auditor-pane {
-    height: 100%;
+  .auditor-shell.nicegui-row {
+    flex: 1 1 auto;
+    align-items: stretch;
+    width: 100%;
     min-height: 0;
-    overflow: auto;
+    min-width: 0;
+    gap: 6px;
+    overflow: hidden;
+  }
+  .auditor-pane.nicegui-column {
+    background: #fffdf8;
+    border: 1px solid #d5cec2;
+    border-radius: 8px;
+    padding: 6px;
+    gap: 6px;
+    min-height: 0;
+    min-width: 0;
+    height: auto;
+    max-height: none;
+    align-self: stretch;
+    box-sizing: border-box;
+    overflow-x: scroll;
+    overflow-y: scroll;
+    scrollbar-color: #6b6458 #efeae1;
+  }
+  .auditor-pane .nicegui-row {
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+  .auditor-controls,
+  .auditor-lines {
+    flex: 0 0 17rem;
+    width: 17rem;
+  }
+  .auditor-controls.nicegui-column,
+  .auditor-lines.nicegui-column {
+    align-items: stretch;
   }
   .auditor-board {
     flex: 1 1 auto;
-    min-width: 16rem;
+    background: #f4f0e6;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 0;
+    padding: 0;
+  }
+  .auditor-board > div {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
   }
   .auditor-board svg {
     display: block;
-    max-width: 100%;
-    max-height: calc(100vh - 4.5rem);
-    width: auto;
+    width: 100%;
     height: auto;
+    min-width: 32rem;
+    max-width: none;
+    max-height: none;
+    background: #f4f0e6;
   }
   .auditor-lines .q-item {
     min-height: 28px;
@@ -116,12 +177,12 @@ def index() -> None:
   }
 </style>
 """)
-    with ui.row().classes("items-baseline gap-3 q-mb-xs"):
+    with ui.row().classes("auditor-title items-baseline"):
         ui.label("Circuit board auditor").classes("text-h5")
         ui.label("Press H for help").classes("text-caption text-grey")
 
-    with ui.row().classes("auditor-shell no-wrap items-stretch w-full gap-3"):
-        with ui.column().classes("auditor-pane w-80 shrink-0 gap-2"):
+    with ui.row().classes("auditor-shell no-wrap items-stretch w-full"):
+        with ui.column().classes("auditor-pane auditor-controls"):
             board_select = ui.select(
                 {key: board.name for key, board in BOARDS.items()},
                 value=state.board_key,
@@ -145,32 +206,33 @@ def index() -> None:
             comp_in = ui.textarea(
                 "Components (one per line)",
                 placeholder="R1 resistor 470k 1=E1 2=J1",
-            ).classes("w-full").props("rows=4")
+            ).classes("w-full").props("rows=3")
             ui.button("Add components", on_click=lambda: add_component())
             wire_in = ui.input("Wire: HOLE-HOLE", placeholder="E1-F1").classes("w-full")
             ui.button("Add wire", on_click=lambda: add_wire())
-            with ui.row():
+            with ui.row().classes("w-full no-wrap"):
                 ui.button("Remove last component", on_click=lambda: remove_last())
                 ui.button("Clear all", on_click=lambda: clear_all())
             ui.separator()
-            ui.label("Continuity probe").classes("text-subtitle1")
-            probe_a = ui.input("Hole A", placeholder="A1")
-            probe_b = ui.input("Hole B", placeholder="E1")
-            with ui.row():
+            ui.label("Continuity probe").classes("text-subtitle2")
+            with ui.row().classes("w-full no-wrap"):
+                probe_a = ui.input("Hole A", placeholder="A1").classes("col")
+                probe_b = ui.input("Hole B", placeholder="E1").classes("col")
+            with ui.row().classes("w-full no-wrap"):
                 ui.button("Probe", on_click=lambda: probe())
                 ui.button("Check circuit", on_click=lambda: check_circuit())
             probe_out = ui.label("")
             ui.separator()
-            ui.label("Netlist JSON").classes("text-subtitle1")
-            json_box = ui.textarea().classes("w-full").props("rows=4")
-            with ui.row():
+            ui.label("Netlist JSON").classes("text-subtitle2")
+            json_box = ui.textarea().classes("w-full").props("rows=3")
+            with ui.row().classes("w-full no-wrap"):
                 ui.button("Export", on_click=lambda: export_json())
                 ui.button("Import", on_click=lambda: import_json())
 
-        with ui.column().classes("auditor-pane auditor-board col-grow min-w-0"):
+        with ui.column().classes("auditor-pane auditor-board col-grow"):
             board_view = ui.html("", sanitize=False)
 
-        with ui.column().classes("auditor-pane auditor-lines w-96 shrink-0 gap-1"):
+        with ui.column().classes("auditor-pane auditor-lines"):
             comp_panel = ui.expansion("Components", value=False).classes("w-full").props("dense")
             with comp_panel:
                 comp_list = ui.column().classes("w-full gap-0")
@@ -499,4 +561,5 @@ if __name__ in {"__main__", "__mp_main__"}:
         host=os.environ.get("HOST", "127.0.0.1"),
         port=int(os.environ.get("PORT", "8080")),
         reload=False,
+        dark=False,
     )

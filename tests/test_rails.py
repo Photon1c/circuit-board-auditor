@@ -42,8 +42,19 @@ def test_jos_board_reports_every_row_and_keeps_strip_gaps():
         if n == 5:
             assert f"K{n}" not in pos
             continue
-        assert pos[f"K{n}"][1] == pos[f"A{n}"][1]
-        assert pos[f"M{n}"][1] == pos[f"F{n}"][1]
+        assert pos[f"K{n}"][1] == pos[f"J{n}"][1]
+        assert pos[f"M{n}"][1] == pos[f"A{n}"][1]
+
+
+def test_jos_columns_read_j_to_a_from_the_left():
+    pos = jos().positions()
+    letters = list("JIHGFEDCBA")
+    xs = [pos[f"{col}1"][0] for col in letters]
+    assert xs == sorted(xs)
+    assert pos["J1"][0] < pos["A1"][0]
+    assert pos["E1"][0] - pos["F1"][0] == 2
+    assert pos["L1"][0] < pos["J1"][0]
+    assert pos["A1"][0] < pos["M1"][0]
 
 
 def test_one_segment_connects_the_whole_rail():
@@ -120,7 +131,7 @@ def test_l_and_n_are_positive_k_and_m_are_negative():
         assert f">{label}</text>" in svg
 
 
-def test_split_board_restarts_row_numbers_on_the_right():
+def test_split_board_inverts_row_numbers_on_the_right():
     svg = render_svg(jos())
     labels = [
         (float(x), float(y), int(row))
@@ -129,14 +140,15 @@ def test_split_board_restarts_row_numbers_on_the_right():
             svg,
         )
     ]
-    by_row: dict[int, list[tuple[float, float]]] = {}
+    by_y: dict[float, list[tuple[float, int]]] = {}
     for x, y, row in labels:
-        by_row.setdefault(row, []).append((x, y))
-    assert set(by_row) == set(range(1, 64))
-    for points in by_row.values():
+        by_y.setdefault(y, []).append((x, row))
+    assert len(by_y) == 63
+    for points in by_y.values():
         assert len(points) == 2
-        assert points[0][1] == points[1][1]
-        assert points[0][0] != points[1][0]
+        left, right = sorted(points)
+        assert left[0] != right[0]
+        assert left[1] + right[1] == 64
 
 
 def test_supply_short_on_one_rail():

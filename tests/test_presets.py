@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REFS = [
     "U1", "U2", "U3",
     "C1", "C2", "C3",
-    "R2", "R3", "R4", "R5", "R6",
+    "R2", "P1", "R4", "R5", "R6",
     "D1", "D2", "D3",
 ]
 

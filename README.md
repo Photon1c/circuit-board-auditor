@@ -56,6 +56,8 @@ C1 capacitor 100u +=A3 -=A6
 
 LED `anode` is the long leg and `cathode` is the short leg. A pot's pins are `A`, `W`, and `B`. An IC uses the pin numbers printed on the datasheet (`PIN1`, `1`, and so on).
 
+The drawing marks polarity inside the holes. An LED or diode has a cross in the anode and a bar in the cathode. Every capacitor has a cross in the positive hole and a bar in the negative hole. Name those pins `+` and `-`, or use pin 1 and pin 2, where pin 1 is positive. A resistor has no polarity mark.
+
 **Remove last component** drops the most recently added part. **Clear all** drops every part and wire.
 
 ## Jumper wires
@@ -78,15 +80,15 @@ A wire is a conductor. A resistor is not: the probe does not beep through a part
 
 ## California JOS board
 
-Row 1 is at the bottom. Columns A–E and F–J are separate strips, so `E1` is not connected to `F1`. The same row number is used on the left half and the right half.
+Row 1 is at the bottom. Columns run J to A from left to right. J–F and E–A are separate strips, so `F1` is not connected to `E1`. Hole names use that same row on both halves: `J1` lines up with `E1`. The printed numbers on the right edge run the other way, so the bottom of that edge reads 63 and the top reads 1.
 
 Power rails:
 
 | Rail | Side | Polarity |
 | --- | --- | --- |
 | K | outer left | negative |
-| L | inner left, beside A | positive |
-| M | inner right, beside J | negative |
+| L | inner left, beside J | positive |
+| M | inner right, beside A | negative |
 | N | outer right | positive |
 
 Each rail is one electrical run from hole 1 to hole 63. Hole 5 is missing on every rail (there is no `K5`, `L5`, `M5`, or `N5`). Hole 4 is still connected to hole 6.
