@@ -93,6 +93,8 @@ Power rails:
 
 Each rail is one electrical run from hole 1 to hole 63. Hole 5 is missing on every rail (there is no `K5`, `L5`, `M5`, or `N5`). Hole 4 is still connected to hole 6.
 
+On the drawing a positive rail is red, and so is every jumper that lands on it. A negative rail is black, and so is every jumper that lands on it. Other jumpers stay dark. With BreadVolt on, a red rail the circuit uses reads +9V and a black rail reads GND. A red rail with nothing on it reads (off). The LED chaser’s battery feeds the right rail only, so the left red rail reads (off). The shaded block covers the terminal rows only. The two positive rails stay separate, and the two ground rails meet only where a jumper joins them.
+
 **BreadVolt** is available only on this board. Turn it on when the module is plugged into the bottom of the board:
 
 - Its pins occupy power-rail holes 1–4.

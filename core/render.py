@@ -11,6 +11,9 @@ MARGIN = 40
 HOLE_R = 4
 MARK_ARM = 3  # plus and minus sit inside the colored hole
 DRAW_RESISTOR_BODY = False  # zigzag beside a resistor; off until the placement is settled
+POSITIVE = "#d01212"  # positive rail and the jumpers that land on it
+GROUND = "#1a1a1a"    # negative rail and the jumpers that land on it
+SIGNAL = "#333333"    # a jumper that does not touch a supply rail
 PALETTE = [
     "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#42d4f4",
     "#f032e6", "#9a6324", "#469990", "#800000", "#808000", "#000075",
@@ -19,12 +22,68 @@ PALETTE = [
 
 def _rail_label(rail: Rail) -> str:
     """Rail letter plus polarity, for example 'L+' or 'K-'."""
-    name = rail.name.strip()
-    if name.startswith("+"):
+    supply = _rail_supply(rail)
+    if supply == "+":
         return f"{rail.id}+"
-    if name.startswith("-"):
+    if supply == "-":
         return f"{rail.id}-"
     return rail.id
+
+
+def _rail_supply(rail: Rail) -> str | None:
+    """'+' or '-' when the rail name starts with that sign."""
+    name = rail.name.strip()
+    if name.startswith("+"):
+        return "+"
+    if name.startswith("-"):
+        return "-"
+    return None
+
+
+def _hole_supply(board: Board, hole: str) -> str | None:
+    """'+' or '-' when the hole is on a supply rail, otherwise None."""
+    letter = board.normalize(hole)[:1]
+    for rail in board.rails:
+        if rail.id == letter:
+            return _rail_supply(rail)
+    return None
+
+
+def _used_rail_ids(board: Board, netlist: Netlist) -> set[str]:
+    """Rail letters that a placed pin or jumper actually lands on."""
+    holes: list[str] = []
+    for a, b in netlist.wires:
+        holes.extend((a, b))
+    for comp in netlist.components:
+        for hole in comp.pins.values():
+            if hole != NC and board.has_hole(hole):
+                holes.append(hole)
+    used: set[str] = set()
+    for hole in holes:
+        letter = board.normalize(hole)[:1]
+        if any(rail.id == letter for rail in board.rails):
+            used.add(letter)
+    return used
+
+
+def _wire_supply(board: Board, a: str, b: str) -> str:
+    """How to color a jumper: '+', '-', 'short', or 'signal'."""
+    ends = {pole for pole in (_hole_supply(board, a), _hole_supply(board, b)) if pole}
+    if ends == {"+"}:
+        return "+"
+    if ends == {"-"}:
+        return "-"
+    if len(ends) == 2:
+        return "short"
+    return "signal"
+
+
+def _supply_color(supply: str) -> str:
+    if supply == "+":
+        return POSITIVE
+    if supply == "-":
+        return GROUND
+    return SIGNAL
 
 
 def _pin_key(name: str) -> str:
@@ -145,9 +204,27 @@ def render_svg(board: Board, netlist: Netlist | None = None, *, breadvolt: bool 
     for rail in board.rails:
         x, _ = pos[f"{rail.id}1"]
         sx, sy = pt_xy(x, min_y)
+        supply = _rail_supply(rail)
+        fill = _supply_color(supply or "signal") if supply else "#2a2622"
         out.append(
             f'<text x="{sx:g}" y="{sy - 14:g}" '
-            f'text-anchor="middle" font-size="12" fill="#2a2622">{escape(_rail_label(rail))}</text>'
+            f'text-anchor="middle" font-size="12" fill="{fill}">{escape(_rail_label(rail))}</text>'
+        )
+    # A supply rail is a colored bus: red for positive, black for ground.
+    # The missing socket at a skipped hole is not a break, so the bus is one line.
+    for rail in board.rails:
+        supply = _rail_supply(rail)
+        if supply is None:
+            continue
+        present = [n for n in range(1, rail.holes + 1) if board.has_hole(f"{rail.id}{n}")]
+        if len(present) < 2:
+            continue
+        x1, y1 = pt(f"{rail.id}{present[0]}")
+        x2, y2 = pt(f"{rail.id}{present[-1]}")
+        out.append(
+            f'<line data-rail="{escape(rail.id)}" data-supply="{supply}" '
+            f'x1="{x1:g}" y1="{y1:g}" x2="{x2:g}" y2="{y2:g}" '
+            f'stroke="{_supply_color(supply)}" stroke-width="8" stroke-linecap="round"/>'
         )
     # A split breadboard prints rows 1..n again on the right half.
     # "inverted" runs that edge the other way: beside row 1 is the last number.
@@ -168,12 +245,14 @@ def render_svg(board: Board, netlist: Netlist | None = None, *, breadvolt: bool 
                 f'text-anchor="middle" font-size="11" fill="#2a2622">{shown}</text>'
             )
 
-    # Jumper wires.
+    # Jumper wires. A lead that lands on a supply rail takes that rail's color.
     for a, b in netlist.wires:
         (x1, y1), (x2, y2) = pt(a), pt(b)
+        supply = _wire_supply(board, a, b)
         out.append(
-            f'<line x1="{x1:g}" y1="{y1:g}" x2="{x2:g}" y2="{y2:g}" '
-            f'stroke="#333" stroke-width="3" stroke-linecap="round"/>'
+            f'<line data-holes="{escape(a)}-{escape(b)}" data-supply="{supply}" '
+            f'x1="{x1:g}" y1="{y1:g}" x2="{x2:g}" y2="{y2:g}" '
+            f'stroke="{_supply_color(supply)}" stroke-width="3" stroke-linecap="round"/>'
         )
 
     # Component pins joined in order, plus a label at the first pin.
@@ -206,12 +285,14 @@ def render_svg(board: Board, netlist: Netlist | None = None, *, breadvolt: bool 
                         f"<title>{escape(comp.ref)}</title></polyline>"
                     )
 
-    # Holes, colored by component when used. A BreadVolt shades the rows it covers.
-    if breadvolt and board.breadvolt is not None:
+    # The BreadVolt shade covers the terminal strips only. The rails stay visible
+    # beside it, because that is where the module feeds power in.
+    if breadvolt and board.breadvolt is not None and board.columns:
         covered = board.breadvolt.covered_rows
-        ys = [pos[f"{board.columns[0]}{row}"][1] for row in range(1, covered + 1)]
-        x0, y0 = pt_xy(min_x - 0.7, min(ys) - 0.55)
-        x1, y1 = pt_xy(max_x + 0.7, max(ys) + 0.55)
+        col_x = [pos[f"{col}1"][0] for col in board.columns]
+        row_y = [pos[f"{board.columns[0]}{row}"][1] for row in range(1, covered + 1)]
+        x0, y0 = pt_xy(min(col_x) - 0.55, min(row_y) - 0.55)
+        x1, y1 = pt_xy(max(col_x) + 0.55, max(row_y) + 0.55)
         rx, ry = min(x0, x1), min(y0, y1)
         out.append(
             f'<rect x="{rx:g}" y="{ry:g}" width="{abs(x1 - x0):g}" height="{abs(y1 - y0):g}" '
@@ -226,12 +307,19 @@ def render_svg(board: Board, netlist: Netlist | None = None, *, breadvolt: bool 
         used = hole in hole_color
         fill = hole_color.get(hole, "#fffdf8")
         stroke = "#1f1b16" if used else "#4a453e"
+        stroke_width = 1.4
         if breadvolt and board.breadvolt_zone(hole) == "pin" and not used:
-            fill = "#e0b15a"
+            supply = _hole_supply(board, hole)
+            if supply == "+":
+                stroke = POSITIVE
+                stroke_width = 2.4
+            elif supply == "-":
+                stroke = GROUND
+                stroke_width = 2.4
         radius = HOLE_R + (1 if used else 0)
         out.append(
             f'<circle cx="{x:g}" cy="{y:g}" r="{radius}" fill="{fill}" '
-            f'stroke="{stroke}" stroke-width="1.4">'
+            f'stroke="{stroke}" stroke-width="{stroke_width:g}">'
             f"<title>{hole}</title></circle>"
         )
 
@@ -264,6 +352,39 @@ def render_svg(board: Board, netlist: Netlist | None = None, *, breadvolt: bool 
                 f'stroke-width="1.7" stroke-linecap="round">'
                 f"<title>{escape(f'{hole} {comp.ref} {sign}')}</title>{lines}</g>"
             )
+
+    # Name the fed end of each rail. A positive rail the circuit never touches
+    # reads (off): the battery is on the rail that the jumpers actually use.
+    if breadvolt and board.breadvolt is not None:
+        fed = [(rail, _rail_supply(rail)) for rail in board.rails]
+        fed = [(rail, supply) for rail, supply in fed if supply]
+        if fed:
+            used = _used_rail_ids(board, netlist)
+            located = []
+            for rail, supply in fed:
+                x, y = pt(f"{rail.id}1")
+                located.append((x, y, supply, rail.id))
+            mid_x = (min(item[0] for item in located) + max(item[0] for item in located)) / 2
+            groups = (
+                [item for item in located if item[0] <= mid_x],
+                [item for item in located if item[0] > mid_x],
+            )
+            for group in groups:
+                ordered = sorted(group)
+                outer = 0 if ordered and ordered[0][0] <= mid_x else len(ordered) - 1
+                for index, (x, y, supply, rail_id) in enumerate(ordered):
+                    drop = 16 if index == outer else 28
+                    sample = f"{rail_id}6" if board.has_hole(f"{rail_id}6") else f"{rail_id}{fed[0][0].holes}"
+                    at_bottom = y > pt(sample)[1]
+                    y_text = y + drop if at_bottom else y - drop
+                    unused = bool(used) and rail_id not in used and supply == "+"
+                    word = "(off)" if unused else ("+9V" if supply == "+" else "GND")
+                    fill = "#6b6458" if unused else _supply_color(supply)
+                    out.append(
+                        f'<text data-rail="{escape(rail_id)}" x="{x:g}" y="{y_text:g}" '
+                        f'text-anchor="middle" font-size="11" font-weight="bold" '
+                        f'fill="{fill}">{word}</text>'
+                    )
 
     out.append("</svg>")
     return "".join(out)

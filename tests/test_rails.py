@@ -5,8 +5,10 @@ import pytest
 
 from core.board import Board
 from core.checks import run_checks
+from core.entry import parse_components, parse_wires
 from core.nets import Netlist, netlist_from_dict
-from core.render import render_svg
+from core.presets import LED_CHASER
+from core.render import GROUND, POSITIVE, render_svg
 
 ROOT = Path(__file__).resolve().parents[1]
 JOS = "california_jos_breadboard_870_solderless.json"
@@ -186,3 +188,38 @@ def test_svg_shades_the_breadvolt_when_asked():
     svg = render_svg(jos(), breadvolt=True)
     assert "BreadVolt" in svg
     assert ">BreadVolt</text>" not in render_svg(jos())
+    assert svg.count(">+9V</text>") == 2
+    assert svg.count(">GND</text>") == 2
+    assert ">+9V</text>" not in render_svg(jos())
+
+
+def test_supply_rails_and_their_jumpers_are_red_or_black():
+    board = jos()
+    bare = render_svg(board)
+    assert 'data-rail="L" data-supply="+"' in bare
+    assert 'data-rail="N" data-supply="+"' in bare
+    assert 'data-rail="K" data-supply="-"' in bare
+    assert 'data-rail="M" data-supply="-"' in bare
+    assert f'stroke="{POSITIVE}"' in bare
+    assert f'stroke="{GROUND}"' in bare
+    nl = Netlist(board, [], [("F2", "N2"), ("E2", "K15"), ("K15", "M11"), ("E3", "F4")])
+    svg = render_svg(board, nl)
+    assert 'data-holes="F2-N2" data-supply="+"' in svg
+    assert 'data-holes="E2-K15" data-supply="-"' in svg
+    assert 'data-holes="K15-M11" data-supply="-"' in svg
+    assert 'data-holes="E3-F4" data-supply="signal"' in svg
+    cover = render_svg(board, breadvolt=True)
+    rail_x = float(re.search(r'data-rail="K" data-supply="-" x1="([^"]+)"', cover).group(1))
+    shade_x = float(re.search(r'<rect x="([^"]+)" [^>]*fill="#e8d39a"', cover).group(1))
+    assert shade_x > rail_x
+
+
+def test_led_chaser_marks_the_unused_left_rail_off():
+    board = jos()
+    nl = Netlist(board, parse_components(LED_CHASER.lines), parse_wires(LED_CHASER.wires))
+    svg = render_svg(board, nl, breadvolt=True)
+    assert re.search(r'data-rail="L"[^>]*>\(off\)</text>', svg)
+    assert re.search(r'data-rail="N"[^>]*>\+9V</text>', svg)
+    assert svg.count(">(off)</text>") == 1
+    assert svg.count(">+9V</text>") == 1
+    assert svg.count(">GND</text>") == 2

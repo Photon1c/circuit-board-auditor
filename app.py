@@ -195,7 +195,9 @@ def index() -> None:
                 on_change=lambda e: on_breadvolt(e.value),
             )
             breadvolt_note = ui.label(
-                "Pins use power-rail holes 1–4. Rows 1–10 are covered, and the circuit slides up above them."
+                "Red is +9V and black is ground, from the rail the circuit uses. "
+                "A red rail with nothing on it reads (off). "
+                "Rows 1–10 of the terminal strips are covered, and the circuit slides up above them."
             ).classes("text-caption text-grey")
             circuit_select = ui.select(
                 {key: circuit.label for key, circuit in CIRCUITS.items()},
@@ -261,7 +263,9 @@ def index() -> None:
         ui.label("Add circuit loads a whole example, including its jumper wires. "
                  "LED chaser is placed on the California JOS board.")
         ui.label("On that board, BreadVolt covers rows 1–10 and its pins occupy "
-                 "power-rail holes 1–4. Rail hole 5 is skipped. Turning it on slides "
+                 "power-rail holes 1–4. A red rail the circuit uses is +9V; one with "
+                 "nothing on it reads (off). Black rails are ground. "
+                 "Rail hole 5 is skipped. Turning it on slides "
                  "the placed circuit up to the first row above the cover.")
         ui.label("Wire box: HOLE-HOLE, for example E1-F1")
         ui.label("Components, checks, and continuity sit on the right. Each heading and each line opens for the detail.")
