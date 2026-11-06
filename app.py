@@ -16,7 +16,7 @@ from core.checks import LinkCheck, run_checks, run_link_checks
 from core.entry import parse_components, parse_wire, parse_wires
 from core.nets import Component, Netlist, breadvolt_lift, shift_placement
 from core.parts import PARTS
-from core.presets import CIRCUITS, Circuit
+from core.presets import CIRCUITS, Circuit, incompatibility, place_on
 from core.render import render_svg
 
 BOARD_DIR = Path(__file__).parent / "boards"
@@ -261,7 +261,9 @@ def index() -> None:
         ui.label("Component box: one component per line, REF KIND [VALUE] PIN=HOLE ... "
                  "(use PIN=nc for an open pin)")
         ui.label("Add circuit loads a whole example, including its jumper wires. "
-                 "LED chaser is placed on the California JOS board.")
+                 "It goes on the board already selected when every hole it needs is there. "
+                 "When it does not fit, the app says why and switches to the board "
+                 "the example was drawn for.")
         ui.label("On that board, BreadVolt covers rows 1–10 and its pins occupy "
                  "power-rail holes 1–4. A red rail the circuit uses is +9V; one with "
                  "nothing on it reads (off). Black rails are ground. "
@@ -413,28 +415,40 @@ def index() -> None:
         if not key:
             return
         circuit = CIRCUITS[key]
-        board = BOARDS.get(circuit.board)
-        if board is None:
+        preset_board = BOARDS.get(circuit.board)
+        if preset_board is None:
             ui.notify(f"Unknown board {circuit.board!r}", type="negative")
             circuit_select.set_value(None)
             return
-        try:
-            comps = parse_components(circuit.lines)
-            wires = [(board.normalize(a), board.normalize(b)) for a, b in parse_wires(circuit.wires)]
-        except ValueError as ex:
-            ui.notify(str(ex), type="negative")
+        target = state.board
+        reason = incompatibility(target, circuit)
+        if reason is not None and state.board_key != circuit.board:
+            ui.notify(
+                f"Board/circuit not compatible ({reason}); "
+                f"switching to preset board: {preset_board.name}",
+                type="warning",
+            )
+            target = preset_board
+            reason = incompatibility(target, circuit)
+        if reason is not None:
+            ui.notify(f"{circuit.label} does not fit on {target.name}: {reason}", type="negative")
             circuit_select.set_value(None)
             return
-        if circuit.board != state.board_key:
+        placed = place_on(target, circuit)
+        if placed is None:  # incompatibility() above already found every missing hole
+            circuit_select.set_value(None)
+            return
+        comps, wires = placed
+        if target is not state.board:
             state.board_key = circuit.board
             state.components = []
             state.wires = []
             state.breadvolt_shift = 0
             board_select.set_value(circuit.board)
-        if state.breadvolt and board.breadvolt is not None:
-            delta = state.breadvolt_shift or breadvolt_lift(board, comps, wires)
+        if state.breadvolt and target.breadvolt is not None:
+            delta = state.breadvolt_shift or breadvolt_lift(target, comps, wires)
             try:
-                comps, wires = shift_placement(board, comps, wires, delta)
+                comps, wires = shift_placement(target, comps, wires, delta)
             except ValueError as ex:
                 ui.notify(str(ex), type="negative")
                 circuit_select.set_value(None)

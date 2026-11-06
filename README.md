@@ -76,7 +76,7 @@ A wire is a conductor. A resistor is not: the probe does not beep through a part
 
 **Check circuit** runs the continuity list for a loaded example, such as the LED chaser. The summary stays next to the button. The individual lines open under **Continuity** on the right. Failures are listed first. Each line says what should be connected or open, what was measured, and why that pair matters.
 
-**Add circuit** places a whole example, including its jumper wires. **LED chaser** switches to the California JOS board and places the 555, 4017, ULN2003, the passives, the LEDs, and the jumpers. Choosing it again does not duplicate parts; it only fills in jumpers that are missing.
+**Add circuit** places a whole example, including its jumper wires. **LED chaser** switches to the California JOS board and places the 555, 4017, ULN2003, the passives, the LEDs, and the jumpers. **Ultrasonic Sensor-ESP** places a XIAO ESP32-C6, an M5Stack U098-B2 ultrasonic unit, its 1k/1.5k echo divider, and the switched 5 V feed; it was drawn for the 170-hole board. An example goes on the board already selected when every hole it needs is there. When it does not fit — too few rows, or no power rails — the app reports the mismatch and switches to the board the example was drawn for. Choosing it again does not duplicate parts; it only fills in jumpers that are missing.
 
 ## California JOS board
 

@@ -4,7 +4,13 @@ from core.board import Board
 from core.checks import run_checks, run_link_checks
 from core.entry import parse_components, parse_wires
 from core.nets import Netlist, breadvolt_lift, shift_placement
-from core.presets import CIRCUITS, LED_CHASER
+from core.presets import (
+    CIRCUITS,
+    LED_CHASER,
+    ULTRASONIC_SENSOR_ESP,
+    incompatibility,
+    place_on,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -81,3 +87,71 @@ def test_breadvolt_lifts_the_chaser_to_the_row_above_the_cover():
     assert breadvolt_lift(board, moved, moved_wires) == 0
     back, _back_wires = shift_placement(board, moved, moved_wires, -delta)
     assert back[0].pins["PIN1"] == "E2"
+
+
+def test_ultrasonic_sensor_esp_is_selectable_and_fits_the_170_board():
+    assert CIRCUITS["ultrasonic-sensor-esp"] is ULTRASONIC_SENSOR_ESP
+    assert ULTRASONIC_SENSOR_ESP.board == "breadboard_170"
+    board = Board.load(ROOT / "boards" / f"{ULTRASONIC_SENSOR_ESP.board}.json")
+    comps = parse_components(ULTRASONIC_SENSOR_ESP.lines)
+    assert [c.ref for c in comps] == ["M1", "M2", "R1", "R2", "V1"]
+    for comp in comps:
+        for hole in comp.pins.values():
+            assert board.has_hole(hole), f"{comp.ref} pin hole {hole}"
+    m1 = comps[0]
+    assert (m1.pins["D0"], m1.pins["D4"], m1.pins["D5"], m1.pins["D6"]) == ("C1", "C5", "C6", "C7")
+    assert (m1.pins["VBUS"], m1.pins["GND"], m1.pins["D7"]) == ("G1", "G2", "G7")
+    m2 = next(c for c in comps if c.ref == "M2")
+    assert (m2.pins["TRIG"], m2.pins["ECHO"]) == ("B5", "B11")
+    wires = parse_wires(ULTRASONIC_SENSOR_ESP.wires)
+    for a, b in wires:
+        assert board.has_hole(a) and board.has_hole(b)
+    nl = Netlist(board, comps, wires)
+    assert [i for i in run_checks(nl) if i.severity == "error"] == []
+    assert nl.continuity("B5", "C5")        # gray TRIG beside D4
+    assert nl.continuity("A12", "C6")       # divider junction to D5
+    assert nl.continuity("A13", "G2")       # sensor ground common with XIAO ground
+    assert nl.continuity("A15", "C15")      # switched 5 V to the sensor
+    assert not nl.continuity("B11", "A12")  # 1k between ECHO and the junction
+    assert not nl.continuity("A12", "A13")  # 1.5k between junction and ground
+    assert not nl.continuity("B11", "A13")  # ECHO must not be shorted to ground
+    assert not nl.continuity("A15", "A13")  # 5 V must not be shorted to ground
+
+
+def test_ultrasonic_sensor_esp_continuity_list():
+    board = Board.load(ROOT / "boards" / f"{ULTRASONIC_SENSOR_ESP.board}.json")
+    nl = Netlist(board, parse_components(ULTRASONIC_SENSOR_ESP.lines),
+                 parse_wires(ULTRASONIC_SENSOR_ESP.wires))
+    results = run_link_checks(nl, ULTRASONIC_SENSOR_ESP.links)
+    assert all(r.ok for r in results)
+
+
+def test_circuit_places_on_any_selected_board_it_fits():
+    small = Board.load(ROOT / "boards" / "breadboard_170.json")
+    deyue = Board.load(ROOT / "boards" / "deyue_400_solderless.json")
+    jos = Board.load(ROOT / "boards" / f"{ULTRASONIC_SENSOR_ESP.board}.json")
+    assert place_on(small, ULTRASONIC_SENSOR_ESP) is not None
+    placed = place_on(deyue, ULTRASONIC_SENSOR_ESP)
+    assert placed is not None
+    comps, wires = placed
+    nl = Netlist(deyue, comps, wires)
+    assert all(r.ok for r in run_link_checks(nl, ULTRASONIC_SENSOR_ESP.links))
+    assert place_on(jos, ULTRASONIC_SENSOR_ESP) is not None
+    assert incompatibility(deyue, ULTRASONIC_SENSOR_ESP) is None
+
+
+def test_circuit_that_does_not_fit_reports_why():
+    small = Board.load(ROOT / "boards" / "breadboard_170.json")
+    deyue = Board.load(ROOT / "boards" / "deyue_400_solderless.json")
+    assert place_on(small, LED_CHASER) is None
+    assert incompatibility(small, LED_CHASER) is not None
+    assert place_on(deyue, LED_CHASER) is None  # 30 rows, the chaser needs 48
+    big = Board.from_dict({
+        "name": "big rail-less test board",
+        "type": "breadboard",
+        "rows": 63,
+        "columns": list("ABCDEFGHIJ"),
+        "strips": [["A", "B", "C", "D", "E"], ["F", "G", "H", "I", "J"]],
+    })
+    assert "power rail" in incompatibility(big, LED_CHASER)
+    assert place_on(big, ULTRASONIC_SENSOR_ESP) is not None

@@ -33,6 +33,21 @@ def _breadboard(rails: list, rows: int = 50) -> Board:
     })
 
 
+def test_deyue_400_rails_polarity_labels_and_continuity():
+    b = load("deyue_400_solderless.json")
+    by_id = {rail.id: rail.name for rail in b.rails}
+    assert by_id == {"L": "+ left", "K": "- left", "N": "+ right", "M": "- right"}
+    nl = Netlist(b)
+    assert nl.continuity("L1", "L25")
+    assert nl.continuity("M1", "M25")
+    assert not nl.continuity("L1", "K1")
+    assert not nl.continuity("L1", "N1")
+    svg = render_svg(b)
+    assert svg.count("<circle") == 400
+    for label in ("L+", "K-", "N+", "M-"):
+        assert f">{label}</text>" in svg
+
+
 def test_jos_board_reports_every_row_and_keeps_strip_gaps():
     b = jos()
     assert len(list(b.holes())) == 630 + 4 * 62

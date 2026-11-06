@@ -36,6 +36,23 @@ def test_names_are_case_insensitive_and_strict():
         b.normalize("hello")
 
 
+def test_deyue_400_board_grid_and_rails():
+    b = load("deyue_400_solderless.json")
+    assert len(list(b.holes())) == 400
+    assert b.has_hole("A30") and b.has_hole("J30")
+    assert not b.has_hole("A31")
+    assert b.strip_id("A1") == b.strip_id("E1")
+    assert b.strip_id("E1") != b.strip_id("F1")
+    assert b.has_hole("L25") and b.has_hole("M25")
+    assert not b.has_hole("L26")
+    pos = b.positions()
+    # Left positive rail faces outward; right negative rail faces outward.
+    assert pos["L1"][0] < pos["K1"][0] < pos["A1"][0]
+    assert pos["J1"][0] < pos["N1"][0] < pos["M1"][0]
+    assert pos["L1"][1] == pos["A1"][1]
+    assert pos["A30"][1] > pos["A1"][1]
+
+
 def test_gennel_stripboard_vertical_strips():
     b = load("gennel_stripboard_368.json")
     assert len(list(b.holes())) == 368

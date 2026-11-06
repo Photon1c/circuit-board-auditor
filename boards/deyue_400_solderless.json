@@ -1,0 +1,25 @@
+{
+  "name": "Deyue 400-point solderless breadboard",
+  "type": "breadboard",
+  "rows": 30,
+  "columns": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
+  "origin": "A1 at top-left, row 1 at top",
+  "column_direction": "left_to_right",
+  "row_direction": "top_to_bottom",
+  "row_numbering": "top_to_bottom",
+  "strips": [["A", "B", "C", "D", "E"], ["F", "G", "H", "I", "J"]],
+  "center_gap": "E|F",
+  "rails": [
+    {"id": "L", "name": "+ left", "holes": 25},
+    {"id": "K", "name": "- left", "holes": 25},
+    {"id": "N", "name": "+ right", "holes": 25},
+    {"id": "M", "name": "- right", "holes": 25}
+  ],
+  "specs": {
+    "size_mm": [84, 55, 8],
+    "total_points": 400,
+    "ic_points": 300,
+    "rail_points": 100,
+    "pitch_mm": 2.54
+  }
+}

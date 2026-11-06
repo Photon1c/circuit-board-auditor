@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from core.board import Board
 from core.checks import LinkCheck
+from core.entry import parse_components, parse_wires
+from core.nets import NC, Component
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,74 @@ K15-M11    (join the left and right ground rails)
     ),
 )
 
+ULTRASONIC_SENSOR_ESP = Circuit(
+    label="Ultrasonic Sensor-ESP",
+    board="breadboard_170",
+    lines="""\
+M1 module XIAO-ESP32-C6 D0=C1 D1=C2 D2=C3 D3=C4 D4=C5 D5=C6 D6=C7 D7=G7 D8=G6 D9=G5 D10=G4 3V3=G3 GND=G2 VBUS=G1
+M2 module U098-B2 GND=A13 5V=C15 TRIG=B5 ECHO=B11
+R1 resistor 1k 1=A11 2=A12
+R2 resistor 1.5k 1=C12 2=C13
+V1 source 5V +=A15 -=D13
+""",
+    wires="""\
+B6-D12     (D5 jumper, from B6 beside D5, to the divider junction, board row 12)
+H2-B13     (GND jumper, from H2 beside GND, to the ground row, board row 13)
+""",
+    links=(
+        LinkCheck("B5", "C5", True, "gray TRIG plugs in at B5, beside XIAO D4"),
+        LinkCheck("B11", "A11", True, "orange ECHO lands on the 1k top row"),
+        LinkCheck("A12", "C6", True, "divider junction reaches XIAO D5"),
+        LinkCheck("A13", "G2", True, "sensor purple GND is common with XIAO GND"),
+        LinkCheck("D13", "G2", True, "supply negative is common with XIAO GND"),
+        LinkCheck("A15", "C15", True, "switched 5 V feed (white) reaches the sensor"),
+        LinkCheck("B11", "A12", False, "1k stands between ECHO and the D5 junction"),
+        LinkCheck("A12", "A13", False, "1.5k stands between the junction and ground"),
+        LinkCheck("B11", "A13", False, "ECHO is not shorted to ground; a jumper here forces no_echo"),
+        LinkCheck("B5", "A12", False, "TRIG is not tied to the echo junction"),
+        LinkCheck("A15", "A13", False, "the 5 V feed is not shorted to ground"),
+        LinkCheck("C5", "C6", False, "D4 and D5 are not shorted"),
+    ),
+)
+
 CIRCUITS: dict[str, Circuit] = {
     "led-chaser": LED_CHASER,
+    "ultrasonic-sensor-esp": ULTRASONIC_SENSOR_ESP,
 }
+
+
+def missing_hole(board: Board, circuit: Circuit) -> str | None:
+    """First hole the circuit references that is not on board, else None."""
+    holes = [
+        hole
+        for comp in parse_components(circuit.lines)
+        for hole in comp.pins.values()
+        if hole != NC
+    ]
+    holes += [hole for pair in parse_wires(circuit.wires) for hole in pair]
+    for hole in holes:
+        if not board.has_hole(hole):
+            return hole
+    return None
+
+
+def incompatibility(board: Board, circuit: Circuit) -> str | None:
+    """Why the circuit cannot go on board, or None when it fits."""
+    hole = missing_hole(board, circuit)
+    if hole is None:
+        return None
+    rail_ids = {rail.id for rail in board.rails}
+    if hole[0] not in board.columns and hole[0] not in rail_ids:
+        return f"hole {hole} needs a power rail this board does not have"
+    return f"hole {hole} is not on {board.name}"
+
+
+def place_on(
+    board: Board, circuit: Circuit
+) -> tuple[list[Component], list[tuple[str, str]]] | None:
+    """Parse the circuit for board. None when any needed hole is missing."""
+    if missing_hole(board, circuit) is not None:
+        return None
+    comps = parse_components(circuit.lines)
+    wires = [(board.normalize(a), board.normalize(b)) for a, b in parse_wires(circuit.wires)]
+    return comps, wires
