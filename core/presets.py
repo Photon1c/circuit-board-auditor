@@ -16,6 +16,13 @@ class Circuit:
     lines: str
     wires: str = ""
     links: tuple[LinkCheck, ...] = ()
+    # Logic-analyzer probe map ("CH0=B5 ...") the preset is drawn for.
+    # Loading the circuit enables the analyzer overlay with this map.
+    analyzer_map: str = ""
+    # Shaded footprints of hardware that sits ON the board but is not
+    # part of the netlist: (label, corner hole, opposite corner hole).
+    # Drawn like the BreadVolt shade; view only.
+    covers: tuple[tuple[str, str, str], ...] = ()
 
 
 LED_CHASER = Circuit(
@@ -103,7 +110,7 @@ K15-M11    (join the left and right ground rails)
 )
 
 ULTRASONIC_SENSOR_ESP = Circuit(
-    label="Ultrasonic Sensor-ESP",
+    label="Ultrasonic Sensor-ESP (170 test board)",
     board="breadboard_170",
     lines="""\
 M1 module XIAO-ESP32-C6 D0=C1 D1=C2 D2=C3 D3=C4 D4=C5 D5=C6 D6=C7 D7=G7 D8=G6 D9=G5 D10=G4 3V3=G3 GND=G2 VBUS=G1
@@ -132,9 +139,52 @@ H2-B13     (GND jumper, from H2 beside GND, to the ground row, board row 13)
     ),
 )
 
+ULTRASONIC_DEYUE_ANALYZER = Circuit(
+    label="Ultrasonic Sensor-ESP (Deyue 400 + analyzer)",
+    board="deyue_400_solderless",
+    # The bench layout as actually wired (2026-11-14): XIAO D4/D5 land
+    # at C22/C23, the divider spans A25-C27 right beside the module
+    # (R1 1k A25-A26, R2 1.5k C26-C27, junction on row 26) and is
+    # jumpered up to D5, ground is commoned on row 27, and a logic
+    # analyzer expansion board covers E1-G11. Only the XIAO pins in
+    # use are placed; the rest are nc in the model (they are still
+    # physically in the board - read D4/D5/GND off the silkscreen).
+    lines="""\
+M1 module XIAO-ESP32-C6 D4=C22 D5=C23 GND=E27 D0=nc D1=nc D2=nc D3=nc D6=nc D7=nc D8=nc D9=nc D10=nc 3V3=nc VBUS=nc
+M2 module U098-B2 GND=A27 5V=C15 TRIG=B22 ECHO=B25
+R1 resistor 1k 1=A25 2=A26
+R2 resistor 1.5k 1=C26 2=C27
+V1 source 5V +=A15 -=D27
+""",
+    wires="""\
+E26-A23     (divider junction, row 26, to the D5 strip, row 23)
+""",
+    links=(
+        LinkCheck("B22", "C22", True, "TRIG lands on the D4 strip"),
+        LinkCheck("B25", "A25", True, "ECHO lands on R1 top"),
+        LinkCheck("A26", "A23", True, "divider junction reaches the D5 strip"),
+        LinkCheck("A26", "C26", True, "divider junction reaches R2 top"),
+        LinkCheck("A23", "C23", True, "junction is on D5 itself"),
+        LinkCheck("C27", "A27", True, "R2 bottom and sensor GND share ground row 27"),
+        LinkCheck("A27", "E27", True, "sensor ground is common with XIAO GND"),
+        LinkCheck("C15", "A15", True, "switched 5 V feed reaches the sensor"),
+        LinkCheck("B25", "A23", False, "ECHO is not shorted to D5; the divider stands between"),
+        LinkCheck("A25", "A26", False, "1k stands between ECHO and the junction"),
+        LinkCheck("C26", "C27", False, "1.5k stands between junction and ground"),
+        LinkCheck("B22", "B25", False, "TRIG is not tied to ECHO"),
+        LinkCheck("A15", "A27", False, "the 5 V feed is not shorted to ground"),
+    ),
+    analyzer_map="CH0=B22 CH1=B25 CH2=B23 GND=B27",
+    covers=(
+        ("Logic analyzer", "E1", "G11"),
+        ("XIAO ESP32-C6", "D18", "H24"),
+    ),
+)
+
 CIRCUITS: dict[str, Circuit] = {
     "led-chaser": LED_CHASER,
     "ultrasonic-sensor-esp": ULTRASONIC_SENSOR_ESP,
+    "ultrasonic-deyue-analyzer": ULTRASONIC_DEYUE_ANALYZER,
 }
 
 

@@ -5,6 +5,7 @@ from html import escape
 
 from core.board import Board, Rail
 from core.nets import NC, Component, Netlist
+from core.summary import strip_label
 
 PITCH = 22
 MARGIN = 40
@@ -183,9 +184,13 @@ def _analyzer_items(analyzer: dict[str, str] | None) -> list[tuple[str, str]]:
         ((str(k).upper(), str(v)) for k, v in analyzer.items()), key=rank)
 
 
+COVER_COLORS = ("#b9d2e8", "#c4dfae", "#f2d5a0", "#e3c6e0")
+
+
 def render_svg(board: Board, netlist: Netlist | None = None, *,
                breadvolt: bool = False,
-               analyzer: dict[str, str] | None = None) -> str:
+               analyzer: dict[str, str] | None = None,
+               covers: tuple[tuple[str, str, str], ...] | None = None) -> str:
     netlist = netlist or Netlist(board)
     pos = board.positions()
     xs = [x for x, _ in pos.values()]
@@ -208,12 +213,16 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
 
     comp_color: dict[str, str] = {}
     hole_color: dict[str, str] = {}
+    hole_info: dict[str, list[str]] = {}
     for i, comp in enumerate(netlist.components):
         color = PALETTE[i % len(PALETTE)]
         comp_color[comp.ref] = color
-        for hole in comp.pins.values():
+        part = f"{comp.ref} {comp.kind} {comp.value}".strip()
+        for pin, hole in comp.pins.items():
             if hole != NC and board.has_hole(hole):
-                hole_color[board.normalize(hole)] = color
+                canon = board.normalize(hole)
+                hole_color[canon] = color
+                hole_info.setdefault(canon, []).append(f"{comp.ref} {pin} ({part})")
 
     out = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width:g} {height:g}" '
@@ -281,7 +290,8 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
         out.append(
             f'<line data-holes="{escape(a)}-{escape(b)}" data-supply="{supply}" '
             f'x1="{x1:g}" y1="{y1:g}" x2="{x2:g}" y2="{y2:g}" '
-            f'stroke="{_supply_color(supply)}" stroke-width="3" stroke-linecap="round"/>'
+            f'stroke="{_supply_color(supply)}" stroke-width="3" stroke-linecap="round">'
+            f"<title>jumper {escape(a)}-{escape(b)}</title></line>"
         )
 
     # Component pins joined in order, plus a label at the first pin.
@@ -290,9 +300,14 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
         color = comp_color[comp.ref]
         if len(pins) >= 2:
             points = " ".join(f"{x:g},{y:g}" for x, y in pins)
+            pin_text = ", ".join(
+                f"{pin}={board.normalize(hole)}" for pin, hole in comp.pins.items()
+                if hole != NC and board.has_hole(hole))
             out.append(
                 f'<polyline points="{points}" fill="none" stroke="{color}" '
-                f'stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'
+                f'stroke-width="3" stroke-linecap="round" stroke-linejoin="round">'
+                f"<title>{escape(f'{comp.ref} {comp.value}'.strip())}: "
+                f"{escape(pin_text)}</title></polyline>"
             )
         if pins:
             x, y = pins[0]
@@ -331,6 +346,27 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
             f'<text x="{(rx + abs(x1 - x0) / 2):g}" y="{ry + 16:g}" text-anchor="middle" '
             f'font-size="13" fill="#8a5a00" font-weight="bold">BreadVolt</text>'
         )
+    # Shaded footprints of hardware that sits ON the board (an analyzer
+    # expansion board, the MCU module itself). View only, like the
+    # BreadVolt shade: translucent so holes and leads stay visible.
+    for i, (label, corner_a, corner_b) in enumerate(covers or ()):
+        if not (board.has_hole(corner_a) and board.has_hole(corner_b)):
+            continue
+        (ax, ay), (bx, by) = pt(corner_a), pt(corner_b)
+        x0, x1 = min(ax, bx) - PITCH * 0.55, max(ax, bx) + PITCH * 0.55
+        y0, y1 = min(ay, by) - PITCH * 0.55, max(ay, by) + PITCH * 0.55
+        fill = COVER_COLORS[i % len(COVER_COLORS)]
+        out.append(
+            f'<rect data-cover="{escape(label)}" x="{x0:g}" y="{y0:g}" '
+            f'width="{x1 - x0:g}" height="{y1 - y0:g}" rx="8" '
+            f'fill="{fill}" fill-opacity="0.55" stroke="{fill}">'
+            f"<title>{escape(label)}: covers {escape(corner_a)}-{escape(corner_b)}"
+            " - sits on the board, view only</title></rect>"
+        )
+        out.append(
+            f'<text x="{(x0 + x1) / 2:g}" y="{y0 + 15:g}" text-anchor="middle" '
+            f'font-size="12" fill="#3d3830" font-weight="bold">{escape(label)}</text>'
+        )
     for hole in board.holes():
         x, y = pt(hole)
         used = hole in hole_color
@@ -346,10 +382,14 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
                 stroke = GROUND
                 stroke_width = 2.4
         radius = HOLE_R + (1 if used else 0)
+        if hole in hole_info:
+            title = f"{hole} - " + "; ".join(hole_info[hole])
+        else:
+            title = f"{hole} - empty, {strip_label(board, hole)}"
         out.append(
             f'<circle cx="{x:g}" cy="{y:g}" r="{radius}" fill="{fill}" '
             f'stroke="{stroke}" stroke-width="{stroke_width:g}">'
-            f"<title>{hole}</title></circle>"
+            f"<title>{escape(title)}</title></circle>"
         )
 
     # A cross in the positive hole and a bar in the negative hole.
@@ -456,6 +496,7 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
             dash = ' stroke-dasharray="4 2"' if ch == "GND" else ""
             out.append(
                 f'<g data-analyzer-clip="{escape(ch)}" data-hole="{escape(hole)}">'
+                f"<title>analyzer clip {escape(ch)} on {escape(hole)} (view only)</title>"
                 f'<circle cx="{x:g}" cy="{y:g}" r="8.5" fill="none" '
                 f'stroke="{color}" stroke-width="2.6"{dash}/>'
                 f'<text x="{x + 10:g}" y="{y - 9:g}" font-size="10" '

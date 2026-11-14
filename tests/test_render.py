@@ -123,6 +123,38 @@ def test_analyzer_overlay_absent_by_default_and_ignores_unknown_holes():
     assert "CH0" not in svg
 
 
+def test_covers_shade_named_zones_and_skip_unknown_holes():
+    b = breadboard()
+    svg = render_svg(b, covers=(("Logic analyzer", "A1", "C3"),
+                                ("Module", "E5", "G7"),
+                                ("Nowhere", "Z1", "Z9")))
+    assert svg.count("data-cover=") == 2
+    assert 'data-cover="Logic analyzer"' in svg
+    assert 'data-cover="Module"' in svg
+    assert "Nowhere" not in svg
+    # View only: no shade by default, and holes are unchanged.
+    assert "data-cover=" not in render_svg(b)
+    assert render_svg(b).count("<circle") == svg.count("<circle")
+
+
+def test_hover_text_names_holes_wires_parts_clips_and_covers():
+    b = breadboard()
+    nl = netlist_from_dict(b, {
+        "components": [{"ref": "R1", "kind": "resistor", "value": "1k",
+                        "pins": {"1": "A5", "2": "A6"}}],
+        "wires": [["E6", "F6"]],
+    })
+    svg = render_svg(b, nl, analyzer={"CH0": "B5"},
+                     covers=(("Logic analyzer", "A1", "C3"),))
+    # Occupied hole says what sits in it; empty hole says its strip.
+    assert "<title>A5 - R1 1 (R1 resistor 1k)</title>" in svg
+    assert "empty, row 7 A-E strip" in svg
+    assert "<title>jumper E6-F6</title>" in svg
+    assert "R1 1k: 1=A5, 2=A6" in svg
+    assert "analyzer clip CH0 on B5 (view only)" in svg
+    assert "Logic analyzer: covers A1-C3" in svg
+
+
 def test_analyzer_does_not_change_the_board_or_netlist():
     b = breadboard()
     nl = netlist_from_dict(b, {"wires": [["E1", "F1"]]})

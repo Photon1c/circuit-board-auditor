@@ -18,6 +18,7 @@ from core.nets import Component, Netlist, breadvolt_lift, shift_placement
 from core.parts import PARTS
 from core.presets import CIRCUITS, Circuit, incompatibility, place_on
 from core.render import render_svg
+from core.summary import describe_layout, legend_lines
 
 BOARD_DIR = Path(__file__).parent / "boards"
 BOARDS: dict[str, Board] = {p.stem: Board.load(p) for p in sorted(BOARD_DIR.glob("*.json"))}
@@ -38,6 +39,8 @@ class Session:
         # CH0 TRIG (B5), CH1 ECHO raw (B11), CH2 ECHO at D5 (A12),
         # GND common (A13).
         self.analyzer_map = "CH0=B5 CH1=B11 CH2=A12 GND=A13"
+        # Shaded footprints from the loaded preset (label, corner, corner).
+        self.covers: tuple[tuple[str, str, str], ...] = ()
 
     @property
     def board(self) -> Board:
@@ -59,6 +62,7 @@ def netlist_to_json() -> str:
         "breadvolt_shift": state.breadvolt_shift,
         "analyzer": state.analyzer,
         "analyzer_map": state.analyzer_map,
+        "covers": [list(c) for c in state.covers],
     }, indent=2)
 
 
@@ -80,6 +84,10 @@ def netlist_from_json(text: str) -> None:
     state.breadvolt_shift = int(data.get("breadvolt_shift", 0))
     state.analyzer = bool(data.get("analyzer", False))
     state.analyzer_map = str(data.get("analyzer_map", state.analyzer_map))
+    state.covers = tuple(
+        (str(c[0]), str(c[1]), str(c[2]))
+        for c in data.get("covers", []) if len(c) == 3
+    )
 
 
 def parse_analyzer_map(text: str, board: Board) -> dict[str, str]:
@@ -279,6 +287,12 @@ def index() -> None:
             board_view = ui.html("", sanitize=False)
 
         with ui.column().classes("auditor-pane auditor-lines"):
+            layout_panel = ui.expansion("Connections (text)", value=True).classes("w-full").props("dense")
+            with layout_panel:
+                layout_list = ui.column().classes("w-full gap-0")
+            legend_panel = ui.expansion("Legend", value=False).classes("w-full").props("dense")
+            with legend_panel:
+                legend_list = ui.column().classes("w-full gap-0")
             comp_panel = ui.expansion("Components", value=False).classes("w-full").props("dense")
             with comp_panel:
                 comp_list = ui.column().classes("w-full gap-0")
@@ -319,6 +333,11 @@ def index() -> None:
                  "aid for bench probing and changes no nets or checks.")
         ui.label("Wire box: HOLE-HOLE, for example E1-F1")
         ui.label("Components, checks, and continuity sit on the right. Each heading and each line opens for the detail.")
+        ui.label("Reading the board: the Connections (text) panel on the right "
+                 "lists every part, jumper, and connected group in words, and "
+                 "the Legend explains the dots, lines, rings, and shading. "
+                 "Hover any hole, wire, part outline, clip, or shaded area "
+                 "on the drawing to read what it is.")
         ui.label("Continuity").classes("text-subtitle1")
         ui.label("Enter two holes in the probe boxes and press Probe. "
                  "Check circuit runs the loaded example's continuity list.")
@@ -345,13 +364,26 @@ def index() -> None:
             except ValueError as ex:
                 analyzer_error = str(ex)
         analyzer_status.text = analyzer_error
+        if analyzer_in.value != state.analyzer_map:
+            analyzer_in.value = state.analyzer_map
         analyzer_in.set_visibility(state.analyzer)
         analyzer_note.set_visibility(state.analyzer)
         if analyzer_box.value != state.analyzer:
             analyzer_box.value = state.analyzer
         board_view.content = render_svg(
             state.board, state.netlist(),
-            breadvolt=use_breadvolt(), analyzer=probes)
+            breadvolt=use_breadvolt(), analyzer=probes,
+            covers=state.covers or None)
+        layout_list.clear()
+        with layout_list:
+            ui.label(
+                describe_layout(state.board, state.netlist(),
+                                analyzer=probes, covers=state.covers)
+            ).classes("font-mono text-caption").style("white-space: pre-wrap")
+        legend_list.clear()
+        with legend_list:
+            for line in legend_lines(state.board):
+                ui.label(line).classes("text-caption")
         comp_list.clear()
         with comp_list:
             n_parts = len(state.components)
@@ -445,6 +477,7 @@ def index() -> None:
         state.components = []
         state.wires = []
         state.breadvolt_shift = 0
+        state.covers = ()
         refresh()
 
     def add_parsed(comps: list[Component]) -> bool:
@@ -534,6 +567,10 @@ def index() -> None:
             return
         if not overlap:
             state.components.extend(comps)
+        if circuit.analyzer_map:
+            state.analyzer = True
+            state.analyzer_map = circuit.analyzer_map
+        state.covers = circuit.covers
         if delta and not state.breadvolt_shift:
             state.breadvolt_shift = delta
         added_wires = add_new_wires(wires)
@@ -567,6 +604,7 @@ def index() -> None:
         state.components.clear()
         state.wires.clear()
         state.breadvolt_shift = 0
+        state.covers = ()
         refresh()
 
     def probe() -> None:

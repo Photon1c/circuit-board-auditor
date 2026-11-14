@@ -7,6 +7,7 @@ from core.nets import Netlist, breadvolt_lift, shift_placement
 from core.presets import (
     CIRCUITS,
     LED_CHASER,
+    ULTRASONIC_DEYUE_ANALYZER,
     ULTRASONIC_SENSOR_ESP,
     incompatibility,
     place_on,
@@ -124,6 +125,46 @@ def test_ultrasonic_sensor_esp_continuity_list():
                  parse_wires(ULTRASONIC_SENSOR_ESP.wires))
     results = run_link_checks(nl, ULTRASONIC_SENSOR_ESP.links)
     assert all(r.ok for r in results)
+
+
+def test_ultrasonic_deyue_analyzer_matches_the_bench_layout():
+    assert CIRCUITS["ultrasonic-deyue-analyzer"] is ULTRASONIC_DEYUE_ANALYZER
+    board = Board.load(ROOT / "boards" / f"{ULTRASONIC_DEYUE_ANALYZER.board}.json")
+    comps = parse_components(ULTRASONIC_DEYUE_ANALYZER.lines)
+    assert [c.ref for c in comps] == ["M1", "M2", "R1", "R2", "V1"]
+    m1 = comps[0]
+    assert (m1.pins["D4"], m1.pins["D5"]) == ("C22", "C23")
+    r1 = next(c for c in comps if c.ref == "R1")
+    r2 = next(c for c in comps if c.ref == "R2")
+    # The divider spans A25-C27: R1 A25-A26, R2 C26-C27, junction row 26.
+    assert (r1.pins["1"], r1.pins["2"]) == ("A25", "A26")
+    assert (r2.pins["1"], r2.pins["2"]) == ("C26", "C27")
+    m2 = comps[1]
+    assert (m2.pins["TRIG"], m2.pins["ECHO"]) == ("B22", "B25")
+    for comp in comps:
+        for hole in comp.pins.values():
+            if hole != "nc":
+                assert board.has_hole(hole), f"{comp.ref} pin hole {hole}"
+    wires = parse_wires(ULTRASONIC_DEYUE_ANALYZER.wires)
+    nl = Netlist(board, comps, wires)
+    assert [i for i in run_checks(nl) if i.severity == "error"] == []
+    assert all(r.ok for r in run_link_checks(nl, ULTRASONIC_DEYUE_ANALYZER.links))
+    # The preset carries its analyzer probe map; every probed hole exists.
+    probes = dict(token.split("=", 1)
+                  for token in ULTRASONIC_DEYUE_ANALYZER.analyzer_map.split())
+    assert probes == {"CH0": "B22", "CH1": "B25", "CH2": "B23", "GND": "B27"}
+    for hole in probes.values():
+        assert board.has_hole(hole)
+    # Shaded footprints: analyzer expansion E1-G11, module D18-H24.
+    assert ULTRASONIC_DEYUE_ANALYZER.covers == (
+        ("Logic analyzer", "E1", "G11"),
+        ("XIAO ESP32-C6", "D18", "H24"),
+    )
+    for _label, corner_a, corner_b in ULTRASONIC_DEYUE_ANALYZER.covers:
+        assert board.has_hole(corner_a) and board.has_hole(corner_b)
+    # Dropdown labels stay unique (no duplicate-looking entries).
+    labels = [c.label for c in CIRCUITS.values()]
+    assert len(labels) == len(set(labels))
 
 
 def test_circuit_places_on_any_selected_board_it_fits():
