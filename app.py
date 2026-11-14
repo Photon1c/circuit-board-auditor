@@ -33,6 +33,11 @@ class Session:
         self.wires: list[tuple[str, str]] = []
         self.breadvolt = False
         self.breadvolt_shift = 0
+        self.analyzer = False
+        # Default clips suit the Ultrasonic Sensor-ESP preset:
+        # CH0 TRIG (B5), CH1 ECHO raw (B11), CH2 ECHO at D5 (A12),
+        # GND common (A13).
+        self.analyzer_map = "CH0=B5 CH1=B11 CH2=A12 GND=A13"
 
     @property
     def board(self) -> Board:
@@ -52,6 +57,8 @@ def netlist_to_json() -> str:
         "wires": [list(w) for w in state.wires],
         "breadvolt": state.breadvolt,
         "breadvolt_shift": state.breadvolt_shift,
+        "analyzer": state.analyzer,
+        "analyzer_map": state.analyzer_map,
     }, indent=2)
 
 
@@ -71,6 +78,27 @@ def netlist_from_json(text: str) -> None:
     state.wires = list(netlist.wires)
     state.breadvolt = bool(data.get("breadvolt", False))
     state.breadvolt_shift = int(data.get("breadvolt_shift", 0))
+    state.analyzer = bool(data.get("analyzer", False))
+    state.analyzer_map = str(data.get("analyzer_map", state.analyzer_map))
+
+
+def parse_analyzer_map(text: str, board: Board) -> dict[str, str]:
+    """'CH0=B5 CH1=B11 GND=A13' -> {'CH0': 'B5', ...}, holes validated."""
+    probes: dict[str, str] = {}
+    for token in (text or "").replace(",", " ").split():
+        if "=" not in token:
+            raise ValueError(f"Analyzer probe {token!r} needs the form CH0=B5")
+        ch, hole = token.split("=", 1)
+        ch = ch.strip().upper()
+        if ch != "GND" and not (ch.startswith("CH") and ch[2:].isdigit()
+                                and 0 <= int(ch[2:]) <= 7):
+            raise ValueError(f"Unknown analyzer channel {ch!r} (use CH0-CH7 or GND)")
+        hole = board.normalize(hole.strip())
+        if not board.has_hole(hole):
+            raise ValueError(f"Analyzer probe {ch} names hole {hole!r}, "
+                             "which this board does not have")
+        probes[ch] = hole
+    return probes
 
 
 @ui.page("/")
@@ -199,6 +227,22 @@ def index() -> None:
                 "A red rail with nothing on it reads (off). "
                 "Rows 1–10 of the terminal strips are covered, and the circuit slides up above them."
             ).classes("text-caption text-grey")
+            analyzer_box = ui.checkbox(
+                "Logic analyzer",
+                value=state.analyzer,
+                on_change=lambda e: on_analyzer(e.value),
+            )
+            analyzer_in = ui.input(
+                "Analyzer probes: CHn=HOLE",
+                value=state.analyzer_map,
+                on_change=lambda e: on_analyzer_map(e.value),
+            ).classes("w-full")
+            analyzer_note = ui.label(
+                "Draws the analyzer clips and leads on the board (view only; "
+                "not part of the netlist). Defaults suit the Ultrasonic preset: "
+                "CH0 TRIG, CH1 ECHO raw, CH2 ECHO at the MCU pin, GND common."
+            ).classes("text-caption text-grey")
+            analyzer_status = ui.label("").classes("text-caption text-negative")
             circuit_select = ui.select(
                 {key: circuit.label for key, circuit in CIRCUITS.items()},
                 value=None,
@@ -269,6 +313,10 @@ def index() -> None:
                  "nothing on it reads (off). Black rails are ground. "
                  "Rail hole 5 is skipped. Turning it on slides "
                  "the placed circuit up to the first row above the cover.")
+        ui.label("Logic analyzer: tick the box to draw the analyzer clips "
+                 "(CH0-CH7, GND) on the holes named in the probe box, for "
+                 "example CH0=B5 CH1=B11 CH2=A12 GND=A13. It is a viewing "
+                 "aid for bench probing and changes no nets or checks.")
         ui.label("Wire box: HOLE-HOLE, for example E1-F1")
         ui.label("Components, checks, and continuity sit on the right. Each heading and each line opens for the detail.")
         ui.label("Continuity").classes("text-subtitle1")
@@ -289,7 +337,21 @@ def index() -> None:
     ui.keyboard(on_key=on_key, ignore=["input", "textarea"])
 
     def refresh() -> None:
-        board_view.content = render_svg(state.board, state.netlist(), breadvolt=use_breadvolt())
+        probes = None
+        analyzer_error = ""
+        if state.analyzer:
+            try:
+                probes = parse_analyzer_map(state.analyzer_map, state.board)
+            except ValueError as ex:
+                analyzer_error = str(ex)
+        analyzer_status.text = analyzer_error
+        analyzer_in.set_visibility(state.analyzer)
+        analyzer_note.set_visibility(state.analyzer)
+        if analyzer_box.value != state.analyzer:
+            analyzer_box.value = state.analyzer
+        board_view.content = render_svg(
+            state.board, state.netlist(),
+            breadvolt=use_breadvolt(), analyzer=probes)
         comp_list.clear()
         with comp_list:
             n_parts = len(state.components)
@@ -323,6 +385,14 @@ def index() -> None:
                 css = "text-negative" if issue.severity == "error" else "text-warning"
                 with ui.expansion(f"[{issue.severity}] {issue.code}", value=False).props("dense").classes(f"w-full {css}"):
                     ui.label(issue.message).classes("text-caption")
+
+    def on_analyzer(value: bool) -> None:
+        state.analyzer = bool(value)
+        refresh()
+
+    def on_analyzer_map(text: str) -> None:
+        state.analyzer_map = text or ""
+        refresh()
 
     def use_breadvolt() -> bool:
         return state.breadvolt and state.board.breadvolt is not None

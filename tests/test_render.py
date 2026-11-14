@@ -104,6 +104,36 @@ def test_resistor_zigzag_is_not_drawn():
     assert _resistor_points(0, 0, 0, 44)
 
 
+def test_analyzer_overlay_draws_clips_leads_and_box():
+    b = breadboard()
+    svg = render_svg(b, analyzer={"CH0": "B5", "CH1": "B11", "GND": "A13"})
+    assert svg.count('data-analyzer-clip=') == 3
+    assert svg.count('data-analyzer-lead=') == 3
+    assert 'data-analyzer-panel="1"' in svg
+    assert "LOGIC ANALYZER" in svg
+    assert 'data-analyzer-clip="CH0" data-hole="B5"' in svg
+    assert 'data-analyzer-clip="GND" data-hole="A13"' in svg
+
+
+def test_analyzer_overlay_absent_by_default_and_ignores_unknown_holes():
+    b = breadboard()
+    assert "data-analyzer" not in render_svg(b)
+    svg = render_svg(b, analyzer={"CH0": "Z99", "CH1": "B11"})
+    assert 'data-analyzer-clip="CH1"' in svg
+    assert "CH0" not in svg
+
+
+def test_analyzer_does_not_change_the_board_or_netlist():
+    b = breadboard()
+    nl = netlist_from_dict(b, {"wires": [["E1", "F1"]]})
+    plain = render_svg(b, nl)
+    with_analyzer = render_svg(b, nl, analyzer={"CH0": "B5"})
+    # Same holes and wires; the overlay only adds its own elements and
+    # widens the canvas for the analyzer box.
+    assert plain.count("<circle") == with_analyzer.count("<circle") - 2
+    assert 'data-holes="E1-F1"' in with_analyzer
+
+
 def test_led_chaser_marks_every_led_and_capacitor():
     board = Board.load(ROOT / "boards" / f"{LED_CHASER.board}.json")
     nl = Netlist(board, parse_components(LED_CHASER.lines), parse_wires(LED_CHASER.wires))

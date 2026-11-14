@@ -103,6 +103,12 @@ On the drawing a positive rail is red, and so is every jumper that lands on it. 
 
 The two BreadVolt channels are independent. The checkbox does not join the left positive rail to the right one. Join grounds yourself, as the LED chaser does with `K15-M11`.
 
+## Logic analyzer overlay
+
+Tick **Logic analyzer** when the analyzer is clipped onto the real board. The probe box names one hole per channel, for example `CH0=B5 CH1=B11 CH2=A12 GND=A13`. The drawing shows a colored clip ring on each probed hole, a lead running to an analyzer box beside the board, and the channel list. It is a viewing aid only: the clips are not components, they join no nets, and the checks ignore them. The analyzer state and probe map ride along in the exported JSON.
+
+The defaults suit the Ultrasonic Sensor-ESP preset: CH0 on TRIG (B5), CH1 on the raw ECHO (B11), CH2 on the divided ECHO at the MCU pin (A12), and GND on the common ground (A13). That trio is the interesting comparison for an ultrasonic bench test: what the sensor sent, what the divider delivered, and when the trigger fired, all against one ground.
+
 ## What the checks mean
 
 Open **Checks** on the right. The heading shows the error and warning counts.

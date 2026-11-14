@@ -160,7 +160,32 @@ def _resistor_points(x1: float, y1: float, x2: float, y2: float) -> str:
     return " ".join(coords)
 
 
-def render_svg(board: Board, netlist: Netlist | None = None, *, breadvolt: bool = False) -> str:
+ANALYZER_COLORS = {
+    "CH0": "#d01212", "CH1": "#f58231", "CH2": "#e3b505", "CH3": "#3cb44b",
+    "CH4": "#4363d8", "CH5": "#911eb4", "CH6": "#42d4f4", "CH7": "#f032e6",
+    "GND": "#1a1a1a",
+}
+ANALYZER_PANEL_W = 168
+
+
+def _analyzer_items(analyzer: dict[str, str] | None) -> list[tuple[str, str]]:
+    """(channel, hole) pairs in probe order: CH0..CH7, then GND."""
+    if not analyzer:
+        return []
+    def rank(item: tuple[str, str]) -> tuple[int, str]:
+        name = item[0].upper()
+        if name.startswith("CH") and name[2:].isdigit():
+            return (0, f"{int(name[2:]):02d}")
+        if name == "GND":
+            return (2, name)
+        return (1, name)
+    return sorted(
+        ((str(k).upper(), str(v)) for k, v in analyzer.items()), key=rank)
+
+
+def render_svg(board: Board, netlist: Netlist | None = None, *,
+               breadvolt: bool = False,
+               analyzer: dict[str, str] | None = None) -> str:
     netlist = netlist or Netlist(board)
     pos = board.positions()
     xs = [x for x, _ in pos.values()]
@@ -169,6 +194,10 @@ def render_svg(board: Board, netlist: Netlist | None = None, *, breadvolt: bool 
     min_y, max_y = min(ys), max(ys)
     width = 2 * MARGIN + (max_x - min_x) * PITCH
     height = 2 * MARGIN + (max_y - min_y) * PITCH
+    probes = [(ch, board.normalize(h)) for ch, h in _analyzer_items(analyzer)
+              if board.has_hole(h)]
+    if probes:
+        width += ANALYZER_PANEL_W + 12
 
     def pt_xy(x: float, y: float) -> tuple[float, float]:
         return MARGIN + (x - min_x) * PITCH, MARGIN + (y - min_y) * PITCH
@@ -385,6 +414,53 @@ def render_svg(board: Board, netlist: Netlist | None = None, *, breadvolt: bool 
                         f'text-anchor="middle" font-size="11" font-weight="bold" '
                         f'fill="{fill}">{word}</text>'
                     )
+
+    # Logic analyzer overlay: test clips on the probed holes, leads
+    # running to an analyzer box drawn beside the board. Purely a
+    # viewing aid (like the BreadVolt shade) - it is not a component
+    # and takes no part in the netlist or checks.
+    if probes:
+        panel_x = width - ANALYZER_PANEL_W - 2
+        panel_y = MARGIN - 26
+        panel_h = 42 + len(probes) * 22
+        entries = []
+        for i, (ch, hole) in enumerate(probes):
+            color = ANALYZER_COLORS.get(ch, "#333333")
+            x, y = pt(hole)
+            entry_y = panel_y + 36 + i * 22
+            entries.append((ch, hole, color, entry_y))
+            dash = ' stroke-dasharray="5 3"' if ch == "GND" else ""
+            out.append(
+                f'<polyline data-analyzer-lead="{escape(ch)}" '
+                f'points="{x:g},{y:g} {panel_x - 12:g},{y:g} '
+                f'{panel_x - 12:g},{entry_y:g} {panel_x:g},{entry_y:g}" '
+                f'fill="none" stroke="{color}" stroke-width="2"{dash}/>'
+            )
+        out.append(
+            f'<rect data-analyzer-panel="1" x="{panel_x:g}" y="{panel_y:g}" '
+            f'width="{ANALYZER_PANEL_W:g}" height="{panel_h:g}" rx="8" '
+            f'fill="#fffdf8" stroke="#1f1b16" stroke-width="1.4"/>'
+        )
+        out.append(
+            f'<text x="{panel_x + 10:g}" y="{panel_y + 20:g}" font-size="12" '
+            f'font-weight="bold" fill="#1f1b16">LOGIC ANALYZER</text>'
+        )
+        for ch, hole, color, entry_y in entries:
+            out.append(
+                f'<circle cx="{panel_x + 12:g}" cy="{entry_y - 4:g}" r="4" fill="{color}"/>'
+                f'<text x="{panel_x + 24:g}" y="{entry_y:g}" font-size="11" '
+                f'fill="#1f1b16">{escape(ch)} · {escape(hole)}</text>'
+            )
+        for ch, hole, color, entry_y in entries:
+            x, y = pt(hole)
+            dash = ' stroke-dasharray="4 2"' if ch == "GND" else ""
+            out.append(
+                f'<g data-analyzer-clip="{escape(ch)}" data-hole="{escape(hole)}">'
+                f'<circle cx="{x:g}" cy="{y:g}" r="8.5" fill="none" '
+                f'stroke="{color}" stroke-width="2.6"{dash}/>'
+                f'<text x="{x + 10:g}" y="{y - 9:g}" font-size="10" '
+                f'font-weight="bold" fill="{color}">{escape(ch)}</text></g>'
+            )
 
     out.append("</svg>")
     return "".join(out)
