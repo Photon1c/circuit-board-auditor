@@ -149,10 +149,62 @@ def test_hover_text_names_holes_wires_parts_clips_and_covers():
     # Occupied hole says what sits in it; empty hole says its strip.
     assert "<title>A5 - R1 1 (R1 resistor 1k)</title>" in svg
     assert "empty, row 7 A-E strip" in svg
-    assert "<title>jumper E6-F6</title>" in svg
+    assert "<title>jumper J1 E6-F6</title>" in svg
+    assert 'data-wire-label="J1"' in svg
     assert "R1 1k: 1=A5, 2=A6" in svg
     assert "analyzer clip CH0 on B5 (view only)" in svg
     assert "Logic analyzer: covers A1-C3" in svg
+
+
+def test_in_use_strips_are_tinted_ground_strips_black():
+    b = breadboard()
+    nl = netlist_from_dict(b, {
+        "components": [{"ref": "V1", "kind": "source", "value": "5V",
+                        "pins": {"+": "A1", "-": "A2"}}],
+        "wires": [["A2", "A7"]],
+    })
+    svg = render_svg(b, nl)
+    # Row 2 strip holds the source - pin and the ground jumper end.
+    assert 'data-strip="row2 A-E"' in svg
+    assert 'data-strip="row7 A-E"' in svg  # jumper's far end strip
+    ground_strip = re.search(r'<rect data-strip="row2 A-E"[^>]*fill="#c4c4c4"', svg)
+    assert ground_strip, "ground strip should tint grey"
+    # An empty board tints nothing.
+    assert "data-strip=" not in render_svg(b)
+
+
+def test_distant_pins_get_no_fake_wire_outline():
+    b = breadboard()
+    nl = netlist_from_dict(b, {
+        "components": [
+            {"ref": "M1", "kind": "module", "value": "X",
+             "pins": {"D4": "A1", "D5": "A2", "GND": "J7"}},
+            {"ref": "V1", "kind": "source", "value": "5V",
+             "pins": {"+": "A4", "-": "A10"}},
+            {"ref": "R1", "kind": "resistor", "value": "1k",
+             "pins": {"1": "C1", "2": "C2"}},
+        ],
+    })
+    svg = render_svg(b, nl)
+    # Only the close two-legged resistor keeps its lead line.
+    assert svg.count("<polyline") == 1
+    assert "R1 1k: 1=C1, 2=C2" in svg
+
+
+def test_ground_jumper_ends_are_solid_black():
+    b = breadboard()
+    nl = netlist_from_dict(b, {
+        "components": [{"ref": "V1", "kind": "source", "value": "5V",
+                        "pins": {"+": "A1", "-": "A2"}}],
+        "wires": [["A2", "A7"], ["A1", "A9"]],
+    })
+    svg = render_svg(b, nl)
+    # A7 ends the ground jumper (from the source - pin): solid black.
+    assert re.search(r'fill="#1a1a1a"[^>]*><title>A7 - ground jumper end', svg)
+    # The source - pin itself (A2) is ground too: black, not part-colored.
+    assert re.search(r'fill="#1a1a1a"[^>]*><title>A2 - V1 -', svg)
+    # A9 ends a plain signal jumper: stays an open dot.
+    assert re.search(r'fill="#fffdf8"[^>]*><title>A9 - empty', svg)
 
 
 def test_analyzer_does_not_change_the_board_or_netlist():

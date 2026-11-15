@@ -167,6 +167,13 @@ ANALYZER_COLORS = {
     "GND": "#1a1a1a",
 }
 ANALYZER_PANEL_W = 168
+# Pale strip tints keyed by analyzer channel color (solid fills: the
+# drawing never uses opacity).
+STRIP_TINTS = {
+    "#d01212": "#f3c1c1", "#f58231": "#f8d9bd", "#e3b505": "#f5e6a8",
+    "#3cb44b": "#cdeacb", "#4363d8": "#ccd6f6", "#911eb4": "#e6cdf2",
+    "#42d4f4": "#cdf1fa", "#f032e6": "#f8cdf3", "#1a1a1a": "#c4c4c4",
+}
 
 
 def _analyzer_items(analyzer: dict[str, str] | None) -> list[tuple[str, str]]:
@@ -210,6 +217,28 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
     def pt(hole: str) -> tuple[float, float]:
         x, y = pos[board.normalize(hole)]
         return pt_xy(x, y)
+
+    # Ground nets (any net holding a GND / - pin, or the analyzer GND
+    # clip): jumper ends on them get a solid black fill, so the ground
+    # wire's start and stop read as ground at a glance.
+    ground_nets = {
+        netlist.net_of(hole)
+        for _comp, pin, hole in netlist.placed_pins()
+        if pin.strip().upper() in {"GND", "-", "VSS", "GROUND"}
+    }
+    ground_nets.update(
+        netlist.net_of(hole) for ch, hole in probes if ch == "GND")
+    ground_wire_ends = {
+        board.normalize(h)
+        for pair in netlist.wires for h in pair
+        if netlist.net_of(h) in ground_nets
+    }
+    # A pin named GND (or a source -) is ground wherever it lands:
+    # its dot fills black even though it belongs to a colored part.
+    ground_pin_holes = {
+        hole for _comp, pin, hole in netlist.placed_pins()
+        if pin.strip().upper() in {"GND", "-", "VSS", "GROUND"}
+    }
 
     comp_color: dict[str, str] = {}
     hole_color: dict[str, str] = {}
@@ -283,32 +312,89 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
                 f'text-anchor="middle" font-size="11" fill="#2a2622">{shown}</text>'
             )
 
-    # Jumper wires. A lead that lands on a supply rail takes that rail's color.
-    for a, b in netlist.wires:
+    # Tint each in-use breadboard strip: the strip IS the connection
+    # between the pins landed in it (A27 to C27, C22 to B22), even
+    # though no jumper is drawn. Ground strips tint grey, analyzer
+    # nets tint in a pale channel color, others in tan.
+    clip_holes = {hole: ch for ch, hole in probes}
+    if board.kind == "breadboard" and board.strips:
+        member_holes = {hole for _c, _p, hole in netlist.placed_pins()}
+        member_holes.update(
+            board.normalize(h) for pair in netlist.wires for h in pair)
+        member_holes.update(clip_holes)
+        clip_nets = {netlist.net_of(h): ch for h, ch in clip_holes.items()}
+        for row in range(1, board.rows + 1):
+            for group in board.strips:
+                holes = [f"{c}{row}" for c in group if board.has_hole(f"{c}{row}")]
+                hits = [h for h in holes if h in member_holes]
+                if not hits:
+                    continue
+                root = netlist.net_of(hits[0])
+                if root in ground_nets:
+                    tint = "#c4c4c4"  # grey: a ground strip
+                elif root in clip_nets:
+                    tint = STRIP_TINTS.get(
+                        ANALYZER_COLORS.get(clip_nets[root], ""), "#e8dcc0")
+                else:
+                    tint = "#e8dcc0"
+                (ax, ay), (bx, by) = pt(holes[0]), pt(holes[-1])
+                out.append(
+                    f'<rect data-strip="row{row} {group[0]}-{group[-1]}" '
+                    f'x="{min(ax, bx) - PITCH * 0.52:g}" y="{ay - PITCH * 0.52:g}" '
+                    f'width="{abs(bx - ax) + PITCH * 1.04:g}" '
+                    f'height="{PITCH * 1.04:g}" rx="6" '
+                    f'fill="{tint}">'
+                    f"<title>row {row} {group[0]}-{group[-1]} strip: "
+                    "every hole in this stretch is one connection</title></rect>"
+                )
+
+    # Jumper wires, each tagged J1, J2, ... in netlist order. The
+    # Connections text panel and the JSON audit list the same ids, so
+    # any line on the drawing can be looked up in words. A lead that
+    # lands on a supply rail takes that rail's color.
+    for i, (a, b) in enumerate(netlist.wires, 1):
         (x1, y1), (x2, y2) = pt(a), pt(b)
         supply = _wire_supply(board, a, b)
+        stroke = _supply_color(supply)
+        # A jumper that starts at an analyzer tap takes the channel's
+        # color, so analyzer leads read differently from circuit wires.
+        tap = clip_holes.get(board.normalize(a)) or clip_holes.get(board.normalize(b))
+        if tap and tap != "GND":
+            stroke = ANALYZER_COLORS.get(tap, stroke)
         out.append(
             f'<line data-holes="{escape(a)}-{escape(b)}" data-supply="{supply}" '
+            f'data-tip="jumper J{i} {escape(a)}-{escape(b)}" '
             f'x1="{x1:g}" y1="{y1:g}" x2="{x2:g}" y2="{y2:g}" '
-            f'stroke="{_supply_color(supply)}" stroke-width="3" stroke-linecap="round">'
-            f"<title>jumper {escape(a)}-{escape(b)}</title></line>"
+            f'stroke="{stroke}" stroke-width="3" stroke-linecap="round">'
+            f"<title>jumper J{i} {escape(a)}-{escape(b)}</title></line>"
+        )
+        out.append(
+            f'<text data-wire-label="J{i}" x="{(x1 + x2) / 2 + 5:g}" '
+            f'y="{(y1 + y2) / 2 - 4:g}" font-size="9" font-weight="bold" '
+            f'fill="{stroke}">J{i}</text>'
         )
 
-    # Component pins joined in order, plus a label at the first pin.
+    # A short lead line joins a two-legged part's pins when they sit
+    # close together (a resistor body). Multi-pin parts and far-apart
+    # terminals get NO outline: a line swept between distant pins
+    # reads as a jumper wire and fakes connections that are not there.
+    # Their pins are the colored dots; hover or the text panel lists them.
     for comp in netlist.components:
         pins = [pt(h) for h in comp.pins.values() if h != NC and board.has_hole(h)]
         color = comp_color[comp.ref]
-        if len(pins) >= 2:
-            points = " ".join(f"{x:g},{y:g}" for x, y in pins)
-            pin_text = ", ".join(
-                f"{pin}={board.normalize(hole)}" for pin, hole in comp.pins.items()
-                if hole != NC and board.has_hole(hole))
-            out.append(
-                f'<polyline points="{points}" fill="none" stroke="{color}" '
-                f'stroke-width="3" stroke-linecap="round" stroke-linejoin="round">'
-                f"<title>{escape(f'{comp.ref} {comp.value}'.strip())}: "
-                f"{escape(pin_text)}</title></polyline>"
-            )
+        if len(pins) == 2:
+            (x1, y1), (x2, y2) = pins
+            if ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5 <= 3.5 * PITCH:
+                pin_text = ", ".join(
+                    f"{pin}={board.normalize(hole)}" for pin, hole in comp.pins.items()
+                    if hole != NC and board.has_hole(hole))
+                out.append(
+                    f'<polyline points="{x1:g},{y1:g} {x2:g},{y2:g}" fill="none" '
+                    f'stroke="{color}" stroke-width="3" stroke-linecap="round" '
+                    f'stroke-linejoin="round">'
+                    f"<title>{escape(f'{comp.ref} {comp.value}'.strip())}: "
+                    f"{escape(pin_text)}</title></polyline>"
+                )
         if pins:
             x, y = pins[0]
             label = escape(f"{comp.ref} {comp.value}".strip())
@@ -359,7 +445,9 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
         out.append(
             f'<rect data-cover="{escape(label)}" x="{x0:g}" y="{y0:g}" '
             f'width="{x1 - x0:g}" height="{y1 - y0:g}" rx="8" '
-            f'fill="{fill}" fill-opacity="0.55" stroke="{fill}">'
+            f'fill="{fill}" fill-opacity="0.55" stroke="{fill}" '
+            f'data-tip="{escape(label, quote=True)}: covers '
+            f'{escape(corner_a)}-{escape(corner_b)} - sits on the board, view only">'
             f"<title>{escape(label)}: covers {escape(corner_a)}-{escape(corner_b)}"
             " - sits on the board, view only</title></rect>"
         )
@@ -382,13 +470,19 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
                 stroke = GROUND
                 stroke_width = 2.4
         radius = HOLE_R + (1 if used else 0)
+        if hole in ground_pin_holes or (hole in ground_wire_ends and not used):
+            fill = GROUND
+            stroke = GROUND
         if hole in hole_info:
             title = f"{hole} - " + "; ".join(hole_info[hole])
+        elif hole in ground_wire_ends:
+            title = f"{hole} - ground jumper end, {strip_label(board, hole)}"
         else:
             title = f"{hole} - empty, {strip_label(board, hole)}"
         out.append(
             f'<circle cx="{x:g}" cy="{y:g}" r="{radius}" fill="{fill}" '
-            f'stroke="{stroke}" stroke-width="{stroke_width:g}">'
+            f'stroke="{stroke}" stroke-width="{stroke_width:g}" '
+            f'data-tip="{escape(title, quote=True)}">'
             f"<title>{escape(title)}</title></circle>"
         )
 
@@ -495,7 +589,9 @@ def render_svg(board: Board, netlist: Netlist | None = None, *,
             x, y = pt(hole)
             dash = ' stroke-dasharray="4 2"' if ch == "GND" else ""
             out.append(
-                f'<g data-analyzer-clip="{escape(ch)}" data-hole="{escape(hole)}">'
+                f'<g data-analyzer-clip="{escape(ch)}" data-hole="{escape(hole)}" '
+                f'data-tip="analyzer clip {escape(ch, quote=True)} on '
+                f'{escape(hole, quote=True)} (view only)">'
                 f"<title>analyzer clip {escape(ch)} on {escape(hole)} (view only)</title>"
                 f'<circle cx="{x:g}" cy="{y:g}" r="8.5" fill="none" '
                 f'stroke="{color}" stroke-width="2.6"{dash}/>'

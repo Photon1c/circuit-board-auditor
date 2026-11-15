@@ -131,7 +131,9 @@ def test_ultrasonic_deyue_analyzer_matches_the_bench_layout():
     assert CIRCUITS["ultrasonic-deyue-analyzer"] is ULTRASONIC_DEYUE_ANALYZER
     board = Board.load(ROOT / "boards" / f"{ULTRASONIC_DEYUE_ANALYZER.board}.json")
     comps = parse_components(ULTRASONIC_DEYUE_ANALYZER.lines)
-    assert [c.ref for c in comps] == ["M1", "M2", "R1", "R2", "V1"]
+    # No V1: the battery module feeds the sensor directly, off-board.
+    assert [c.ref for c in comps] == ["M1", "M2", "R1", "R2"]
+    assert comps[1].pins["5V"] == "nc"
     m1 = comps[0]
     assert (m1.pins["D4"], m1.pins["D5"]) == ("C22", "C23")
     r1 = next(c for c in comps if c.ref == "R1")
@@ -152,12 +154,15 @@ def test_ultrasonic_deyue_analyzer_matches_the_bench_layout():
     # The preset carries its analyzer probe map; every probed hole exists.
     probes = dict(token.split("=", 1)
                   for token in ULTRASONIC_DEYUE_ANALYZER.analyzer_map.split())
-    assert probes == {"CH0": "B22", "CH1": "B25", "CH2": "B23", "GND": "B27"}
+    # Analyzer channels land on the breakout rows (E1-F11 footprint):
+    # row 1 = CH0, row 2 = CH1, row 3 = CH2, row 11 = GND, tapped on
+    # the F-side strips (clips drawn at F1/F2/F3/F11).
+    assert probes == {"CH0": "F1", "CH1": "F2", "CH2": "F3", "GND": "F11"}
     for hole in probes.values():
         assert board.has_hole(hole)
-    # Shaded footprints: analyzer expansion E1-G11, module D18-H24.
+    # Shaded footprints: analyzer breakout E1-F11, module D18-H24.
     assert ULTRASONIC_DEYUE_ANALYZER.covers == (
-        ("Logic analyzer", "E1", "G11"),
+        ("Logic analyzer", "E1", "F11"),
         ("XIAO ESP32-C6", "D18", "H24"),
     )
     for _label, corner_a, corner_b in ULTRASONIC_DEYUE_ANALYZER.covers:

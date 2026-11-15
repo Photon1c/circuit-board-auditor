@@ -18,7 +18,7 @@ from core.nets import Component, Netlist, breadvolt_lift, shift_placement
 from core.parts import PARTS
 from core.presets import CIRCUITS, Circuit, incompatibility, place_on
 from core.render import render_svg
-from core.summary import describe_layout, legend_lines
+from core.summary import audit_dict, describe_layout, legend_lines
 
 BOARD_DIR = Path(__file__).parent / "boards"
 BOARDS: dict[str, Board] = {p.stem: Board.load(p) for p in sorted(BOARD_DIR.glob("*.json"))}
@@ -54,6 +54,12 @@ state = Session()
 
 
 def netlist_to_json() -> str:
+    probes = None
+    if state.analyzer:
+        try:
+            probes = parse_analyzer_map(state.analyzer_map, state.board)
+        except ValueError:
+            probes = None
     return json.dumps({
         "board": state.board_key,
         "components": [asdict(c) for c in state.components],
@@ -63,6 +69,12 @@ def netlist_to_json() -> str:
         "analyzer": state.analyzer,
         "analyzer_map": state.analyzer_map,
         "covers": [list(c) for c in state.covers],
+        # Audit section: every wire (J-ids match the drawing and the
+        # Connections text) and every connected group, in plain data.
+        # Import ignores it; it exists so the physical wires can be
+        # checked against something other than the picture.
+        "audit": audit_dict(state.board, state.netlist(),
+                            analyzer=probes, covers=state.covers),
     }, indent=2)
 
 
@@ -212,6 +224,39 @@ def index() -> None:
     padding-bottom: 2px;
   }
 </style>
+<script>
+  // Instant hover tooltip for the board drawing. Native SVG <title>
+  // tooltips are slow and often never fire inside the app, so elements
+  // carry data-tip and this follows the mouse with it instead.
+  document.addEventListener('mouseover', (e) => {
+    const el = e.target.closest ? e.target.closest('[data-tip]') : null;
+    let tip = document.getElementById('svg-tip');
+    if (!el) { if (tip) tip.style.display = 'none'; return; }
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.id = 'svg-tip';
+      tip.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;' +
+        'background:#1f1b16;color:#fffdf8;padding:3px 8px;border-radius:4px;' +
+        'font-size:12px;display:none;max-width:22rem';
+      document.body.appendChild(tip);
+    }
+    tip.textContent = el.getAttribute('data-tip');
+    tip.style.display = 'block';
+  });
+  document.addEventListener('mousemove', (e) => {
+    const tip = document.getElementById('svg-tip');
+    if (tip && tip.style.display === 'block') {
+      tip.style.left = (e.clientX + 12) + 'px';
+      tip.style.top = (e.clientY + 14) + 'px';
+    }
+  });
+  document.addEventListener('mouseout', (e) => {
+    if (e.target.closest && e.target.closest('[data-tip]')) {
+      const tip = document.getElementById('svg-tip');
+      if (tip) tip.style.display = 'none';
+    }
+  });
+</script>
 """)
     with ui.row().classes("auditor-title items-baseline"):
         ui.label("Circuit board auditor").classes("text-h5")

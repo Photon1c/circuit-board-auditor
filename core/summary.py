@@ -40,11 +40,19 @@ def legend_lines(board: Board) -> list[str]:
         "matches the part's name on the drawing.",
         "Open dot: an empty hole. Hover any dot to read its hole name "
         "and what sits in it.",
-        "A part's outline joins its own legs so you can see the part. "
-        "The checker does not treat a part as connecting its pins: a "
-        "resistor or LED stands between them.",
+        "A short colored line between two dots is a two-legged part "
+        "(resistor, LED) sitting between those holes. Multi-pin parts "
+        "are colored dots only, with no outline: the checker never "
+        "treats a part as connecting its own pins, and the Connections "
+        "panel lists every pin in words.",
+        "Pale tint along a row: that strip is in use. Every hole in "
+        "the tinted stretch is the same connection, so a pin dot with "
+        "no wire (a sensor lead, a module pin) is still connected to "
+        "everything else in its tint. Grey tint is a ground strip.",
         "Straight line between two holes: a jumper wire. Red lands on "
-        "a + rail, black on a ground rail, dark grey is a plain signal.",
+        "a + rail, black on a ground rail, dark grey is a plain signal. "
+        "A solid black dot at a line's end is a ground jumper landing "
+        "there: the ground wire's start or stop.",
         "Colored ring with a CH label: a logic-analyzer clip on that "
         "hole. View only; it changes no connections.",
         "Shaded area: hardware sitting on the board (a module, an "
@@ -81,13 +89,13 @@ def describe_layout(board: Board, netlist: Netlist, *,
             out.append(f"    not placed (nc): {' '.join(open_pins)}")
 
     out.append("")
-    out.append("JUMPERS")
+    out.append("JUMPERS (ids match the labels on the drawing)")
     if not netlist.wires:
         out.append("  (none)")
-    for a, b in netlist.wires:
+    for i, (a, b) in enumerate(netlist.wires, 1):
         la, lb = strip_label(board, a), strip_label(board, b)
         joins = f"joins {la} to {lb}" if la != lb else f"within the {la}"
-        out.append(f"  {a}-{b}  ({joins})")
+        out.append(f"  J{i} {a}-{b}  ({joins})")
 
     # Connected groups: pins and clips sharing one electrical node.
     members: dict[str, list[tuple[str, str]]] = {}
@@ -122,3 +130,79 @@ def describe_layout(board: Board, netlist: Netlist, *,
         for label, corner_a, corner_b in covers:
             out.append(f"  {label}: covers {corner_a}-{corner_b}")
     return "\n".join(out)
+
+
+def _net_members(board: Board, netlist: Netlist,
+                 analyzer: dict[str, str] | None) -> dict[str, list[dict]]:
+    members: dict[str, list[dict]] = {}
+    for comp, pin, hole in netlist.placed_pins():
+        members.setdefault(netlist.net_of(hole), []).append(
+            {"hole": hole, "what": f"{comp.ref} {pin}"})
+    for ch, hole in sorted((analyzer or {}).items()):
+        if board.has_hole(hole):
+            canon = board.normalize(hole)
+            members.setdefault(netlist.net_of(canon), []).append(
+                {"hole": canon, "what": f"clip {ch}"})
+    for entries in members.values():
+        entries.sort(key=lambda e: _hole_sort(board, e["hole"]))
+    return members
+
+
+def _ground_nets(board: Board, netlist: Netlist,
+                 analyzer: dict[str, str] | None) -> set[str]:
+    nets = {
+        netlist.net_of(hole)
+        for _comp, pin, hole in netlist.placed_pins()
+        if pin.strip().upper() in {"GND", "-", "VSS", "GROUND"}
+    }
+    for ch, hole in (analyzer or {}).items():
+        if ch.upper() == "GND" and board.has_hole(hole):
+            nets.add(netlist.net_of(board.normalize(hole)))
+    return nets
+
+
+def audit_dict(board: Board, netlist: Netlist, *,
+               analyzer: dict[str, str] | None = None,
+               covers: tuple[tuple[str, str, str], ...] = ()) -> dict:
+    """Structured wire audit for the JSON export.
+
+    Every jumper with its id (matching the drawing and text panel),
+    the strips it joins, and every pin/clip sitting on its net; every
+    connected group likewise. An auditor (human or script) can check
+    the physical wires against this without reading the drawing.
+    """
+    members = _net_members(board, netlist, analyzer)
+    ground = _ground_nets(board, netlist, analyzer)
+    wires = []
+    for i, (a, b) in enumerate(netlist.wires, 1):
+        root = netlist.net_of(a)
+        wires.append({
+            "id": f"J{i}",
+            "from": a,
+            "to": b,
+            "from_strip": strip_label(board, a),
+            "to_strip": strip_label(board, b),
+            "ground": root in ground,
+            "net_members": members.get(root, []),
+        })
+    groups = []
+    ordered = sorted(
+        members.items(),
+        key=lambda kv: min(_hole_sort(board, e["hole"]) for e in kv[1]),
+    )
+    for i, (root, entries) in enumerate(ordered, 1):
+        groups.append({
+            "net": i,
+            "strips": sorted({strip_label(board, e["hole"]) for e in entries}),
+            "ground": root in ground,
+            "members": entries,
+        })
+    return {
+        "board": board.name,
+        "wires": wires,
+        "groups": groups,
+        "covers": [
+            {"label": label, "from": corner_a, "to": corner_b}
+            for label, corner_a, corner_b in covers
+        ],
+    }
